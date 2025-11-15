@@ -58,6 +58,23 @@ export const mockActiveDisasters: DisasterInfo[] = [
     affectedRadius: 40, // km
     isActive: true,
   },
+  {
+    id: 'london-eq-2025',
+    name: 'London Earthquake',
+    type: 'earthquake',
+    date: new Date('2025-11-15'),
+    location: 'London, United Kingdom',
+    center: { lat: 51.5074, lng: -0.1278 },
+    boundary: [
+      { lat: 51.5500, lng: -0.2000 },
+      { lat: 51.5500, lng: -0.0500 },
+      { lat: 51.4500, lng: -0.0500 },
+      { lat: 51.4500, lng: -0.2000 },
+    ],
+    severity: 'severe',
+    affectedRadius: 25, // km
+    isActive: true,
+  },
 ];
 
 // Helper function to calculate distance between two points (Haversine formula)
