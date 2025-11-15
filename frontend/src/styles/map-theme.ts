@@ -1,39 +1,58 @@
-// Minimal dark theme - hide everything except basic land/water distinction
+// Dark theme with roads visible but no labels/text
 export const darkMapTheme: any[] = [
   // Base map - dark background
   {
     elementType: "geometry",
-    stylers: [{ color: "#0a0a0a" }], // Very dark background
+    stylers: [{ color: "#1a1a1a" }],
   },
-  // Hide all labels
+  // Hide ALL labels (road names, place names, etc.)
   {
     elementType: "labels",
     stylers: [{ visibility: "off" }],
   },
-  // Hide all POIs
+  // Hide all POIs (airports, shops, restaurants, etc.)
   {
     featureType: "poi",
     stylers: [{ visibility: "off" }],
   },
-  // Hide all roads
+  // Show roads but hide their labels
   {
     featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#2b2b2b" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels",
     stylers: [{ visibility: "off" }],
   },
-  // Hide transit (including airports)
+  // Highways slightly lighter
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#3d3d3d" }],
+  },
+  // Hide transit (subway, airport icons, etc.)
   {
     featureType: "transit",
     stylers: [{ visibility: "off" }],
   },
-  // Keep water visible for geographic context
+  // Show water for geographic context
   {
     featureType: "water",
     elementType: "geometry",
     stylers: [{ color: "#0f1e2e" }],
   },
-  // Hide administrative boundaries
+  // Show parks/green spaces
+  {
+    featureType: "landscape",
+    elementType: "geometry",
+    stylers: [{ color: "#1a1a1a" }],
+  },
+  // Hide administrative labels but keep boundaries subtle
   {
     featureType: "administrative",
+    elementType: "labels",
     stylers: [{ visibility: "off" }],
   },
 ];
