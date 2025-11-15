@@ -5,6 +5,7 @@ import { Header } from './Header';
 import { MapContainer } from '@/components/map/MapContainer';
 import { LeftPanel } from '@/components/panels/LeftPanel';
 import { RequestHelpFAB } from './RequestHelpFAB';
+import { RequestHelpDialog } from './RequestHelpDialog';
 import { getHelpRequestsByDisaster } from '@/data/mock-help-requests';
 
 interface DashboardProps {
@@ -19,6 +20,9 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
   // State to manage map center - can be controlled by user location or help request selection
   const [mapCenter, setMapCenter] = useState<Location>(disaster.center);
 
+  // State for dialog visibility
+  const [showRequestHelpDialog, setShowRequestHelpDialog] = useState(false);
+
   // Update map center when user location changes (but only initially)
   useEffect(() => {
     if (location) {
@@ -27,8 +31,7 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
   }, [location]);
 
   const handleRequestHelp = () => {
-    // TODO: Implement RequestHelpDialog
-    console.log('Request help clicked');
+    setShowRequestHelpDialog(true);
   };
 
   const handleMarkerClick = (request: any) => {
@@ -79,6 +82,16 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
 
       {/* Request Help FAB (only for victims) */}
       {role === 'victim' && <RequestHelpFAB onClick={handleRequestHelp} />}
+
+      {/* Request Help Dialog */}
+      {role === 'victim' && (
+        <RequestHelpDialog
+          open={showRequestHelpDialog}
+          onClose={() => setShowRequestHelpDialog(false)}
+          userLocation={location}
+          disaster={disaster}
+        />
+      )}
     </div>
   );
 }
