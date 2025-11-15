@@ -1,1 +1,9 @@
 frontend/.env
+
+# Python virtual environment
+backend/venv/
+# Secret environment variables
+backend/.env
+# Python cache
+backend/__pycache__/
+*.pyc
