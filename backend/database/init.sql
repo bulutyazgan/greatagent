@@ -88,6 +88,7 @@ CREATE TABLE cases (
     case_group_id INTEGER REFERENCES case_groups(id), -- NULL for ungrouped/standalone cases
     location POINT NOT NULL, -- Exact coordinates of incident
     description TEXT, -- Free text: "Trapped in collapsed building, 3rd floor"
+    raw_problem_description TEXT, -- Free text: "Exactly what the user typed"
     people_count INTEGER, -- NULL when unknown, critical for resource allocation
     mobility_status VARCHAR(50), -- mobile, injured, trapped - affects urgency
     vulnerability_factors TEXT[], -- ['elderly', 'children_present', 'medical_needs'] - prioritization
