@@ -27,8 +27,9 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
   useEffect(() => {
     if (!map || !window.google) return;
 
-    // Store markers so we can clean them up
+    // Store markers and info windows so we can clean them up
     const markers: any[] = [];
+    const infoWindows: any[] = [];
 
     // Add a marker for each help request
     helpRequests.forEach((request) => {
@@ -47,6 +48,45 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
         animation: request.urgency === 'critical' ? window.google.maps.Animation.BOUNCE : undefined,
       });
 
+      // Create info window with detailed information
+      const infoContent = `
+        <div style="padding: 8px; min-width: 200px; color: #1a1a1a;">
+          <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; color: ${getMarkerColor(request.urgency)};">
+            ${request.urgency.toUpperCase()} - ${request.type.toUpperCase()}
+          </div>
+          <div style="margin-bottom: 4px;">
+            <strong>Name:</strong> ${request.userName}
+          </div>
+          <div style="margin-bottom: 4px;">
+            <strong>People:</strong> ${request.peopleCount}
+          </div>
+          <div style="margin-bottom: 4px;">
+            <strong>Status:</strong> ${request.status.replace('_', ' ').toUpperCase()}
+          </div>
+          ${request.claimedBy ? `<div style="margin-bottom: 4px;"><strong>Claimed by:</strong> ${request.claimedBy}</div>` : ''}
+          <div style="margin-top: 8px; font-size: 12px; color: #666;">
+            ${request.description}
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; color: #999;">
+            ${new Date(request.createdAt).toLocaleString()}
+          </div>
+        </div>
+      `;
+
+      const infoWindow = new window.google.maps.InfoWindow({
+        content: infoContent,
+      });
+
+      // Show info window on hover
+      marker.addListener('mouseover', () => {
+        infoWindow.open(map, marker);
+      });
+
+      // Hide info window when mouse leaves
+      marker.addListener('mouseout', () => {
+        infoWindow.close();
+      });
+
       // Add click listener
       marker.addListener('click', () => {
         if (onMarkerClick) {
@@ -55,11 +95,13 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
       });
 
       markers.push(marker);
+      infoWindows.push(infoWindow);
     });
 
-    // Cleanup function to remove markers when component unmounts or dependencies change
+    // Cleanup function to remove markers and info windows when component unmounts or dependencies change
     return () => {
       markers.forEach((marker) => marker.setMap(null));
+      infoWindows.forEach((infoWindow) => infoWindow.close());
     };
   }, [map, helpRequests, onMarkerClick]);
 
