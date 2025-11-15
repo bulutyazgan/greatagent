@@ -3,6 +3,8 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import type { Location, HelpRequest } from '@/types';
 import { defaultMapOptions } from '@/styles/map-theme';
 import { VictimMarkers } from './VictimMarkers';
+import { HeatmapLayer } from './HeatmapLayer';
+import { HeatmapToggle } from './HeatmapToggle';
 
 interface MapContainerProps {
   center: Location;
@@ -23,6 +25,7 @@ export function MapContainer({ center, zoom = 15, helpRequests = [], onMapLoad, 
   const [map, setMap] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -91,6 +94,13 @@ export function MapContainer({ center, zoom = 15, helpRequests = [], onMapLoad, 
         onMarkerClick={onMarkerClick}
       />
 
+      {/* Heatmap layer */}
+      <HeatmapLayer
+        map={map}
+        helpRequests={helpRequests}
+        visible={showHeatmap}
+      />
+
       {/* Loading overlay */}
       {loading && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-background-secondary z-10">
@@ -116,6 +126,16 @@ export function MapContainer({ center, zoom = 15, helpRequests = [], onMapLoad, 
               </ul>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Heatmap toggle button */}
+      {map && !loading && !error && (
+        <div className="absolute top-4 right-4 z-10">
+          <HeatmapToggle
+            visible={showHeatmap}
+            onToggle={() => setShowHeatmap(!showHeatmap)}
+          />
         </div>
       )}
     </div>
