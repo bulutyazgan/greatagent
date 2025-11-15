@@ -85,5 +85,3 @@ def extract_case_from_text(
 
 # Remember to add to all_tools
 all_tools.append(extract_case_from_text)
-
-
