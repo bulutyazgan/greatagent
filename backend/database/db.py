@@ -4,15 +4,15 @@ Database connection module using psycopg2
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
-import os
+from config import settings
 
 # Database configuration
 DB_CONFIG = {
-    'dbname': os.getenv('DB_NAME', 'beacon_db'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'postgres'),
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432')
+    'dbname': settings.db_name,
+    'user': settings.db_user,
+    'password': settings.db_password,
+    'host': settings.db_host,
+    'port': settings.db_port
 }
 
 

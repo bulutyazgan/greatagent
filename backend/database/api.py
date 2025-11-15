@@ -2,9 +2,11 @@
 FastAPI application with all CRUD endpoints
 """
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 
-from .models import (
+from config import settings
+from models import (
     UserCreate, UserUpdate, UserResponse,
     LocationTrackingCreate, LocationTrackingResponse,
     EmergencyCreate, EmergencyUpdate, EmergencyResponse,
@@ -15,9 +17,20 @@ from .models import (
     ResearchReportCreate, ResearchReportResponse
 )
 
-from . import crud_users, crud_emergencies, crud_coordination
+import crud_users
+import crud_emergencies
+import crud_coordination
 
-app = FastAPI(title="Beacon Emergency Response API", version="1.0.0")
+app = FastAPI(title=settings.api_title, version=settings.api_version)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ============================================================================
