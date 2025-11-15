@@ -84,4 +84,5 @@ def extract_case_from_text(
     return result.dict()
 
 # Remember to add to all_tools
-all_tools.append(extract_case_from_text)
+# SAME SYNTAX AS helperAgents branch, initializing what will be list of tools
+all_tools = [extract_case_from_text]
