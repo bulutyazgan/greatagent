@@ -201,6 +201,7 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
 
       const infoWindow = new window.google.maps.InfoWindow({
         content: infoContent,
+        disableAutoPan: true,
       });
 
       // Show info window on hover

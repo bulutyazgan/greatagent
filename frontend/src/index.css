@@ -94,4 +94,43 @@
   .card-responder-button:hover {
     background: rgba(16, 185, 129, 0.4);
   }
+
+  /* Google Maps InfoWindow Custom Styling */
+  .gm-style .gm-style-iw-c {
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .gm-style .gm-style-iw-d {
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
+  .gm-style .gm-style-iw-t::after {
+    display: none !important;
+  }
+
+  .gm-ui-hover-effect {
+    top: 4px !important;
+    right: 4px !important;
+    width: 32px !important;
+    height: 32px !important;
+    opacity: 1 !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    border-radius: 50% !important;
+  }
+
+  .gm-ui-hover-effect:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+  }
+
+  .gm-ui-hover-effect > span {
+    background-color: #ffffff !important;
+    width: 16px !important;
+    height: 16px !important;
+    margin: 8px !important;
+  }
 }
