@@ -9,12 +9,30 @@ A location-aware emergency response web application for civilians affected by ma
 
 ## Core Concept
 
-This is a **region-specific emergency response app** that gets deployed for specific disaster events. When a disaster occurs (e.g., earthquake in Turkey), civilians in the affected area use the app to:
-- Request help with their specific needs
-- See nearby help requests from others
-- Locate emergency resources (shelters, hospitals, water stations)
-- Receive official updates and alerts
-- Navigate the disaster zone safely
+This is a **region-specific emergency response app** that gets deployed for specific disaster events. When a disaster occurs (e.g., earthquake in Turkey), users in the affected area choose their role and access relevant features.
+
+### Role-Based System
+
+**Initial Screen:**
+When users open the app, they see two options:
+- **"I Need Help"** (Victim role)
+- **"I Want to Provide Help"** (Responder/Volunteer role)
+
+**Victim Role Features:**
+- Request help with specific needs (medical, food, shelter, rescue)
+- View own help request status
+- See nearby emergency resources (shelters, hospitals, water stations, safe zones)
+- Receive official news updates and alerts
+- Navigate to emergency resources
+- **Cannot see** other victims' help requests (reduces information overload)
+
+**Responder/Volunteer Role Features:**
+- View all nearby help requests from victims on the map
+- Filter help requests by type and urgency
+- Mark themselves as "responding" to a specific request
+- See emergency resources to coordinate relief efforts
+- Receive official news updates and alerts
+- **Cannot create** help requests (they're there to provide assistance)
 
 ## Tech Stack
 
@@ -28,16 +46,34 @@ This is a **region-specific emergency response app** that gets deployed for spec
 
 ## User Flow
 
+### Initial Role Selection
 1. User opens app → Auto-detects GPS location
-2. If in disaster zone → Shows map centered on user's neighborhood (zoom ~15)
-3. Map loads with:
+2. Role selection screen appears with two large options:
+   - "I Need Help" (victim role)
+   - "I Want to Provide Help" (responder role)
+3. User selects role → Stored in localStorage for session persistence
+
+### Victim Flow (After selecting "I Need Help")
+1. Map loads centered on user's neighborhood (zoom ~15)
+2. Map shows:
    - User location marker (pulsing blue)
-   - Nearby help request pins (color-coded by urgency)
+   - Emergency resource markers (green) - shelters, hospitals, water stations
+   - Disaster zone boundary (polygon overlay)
+   - **No other victims' help requests visible**
+3. Persistent "Request Help" FAB (bottom-right) always visible
+4. Left slide-in panel with tabs: Alerts, News, Resources, My Requests
+5. User can request help, view resources, get directions, read updates
+
+### Responder Flow (After selecting "I Want to Provide Help")
+1. Map loads centered on user's neighborhood (zoom ~15)
+2. Map shows:
+   - User location marker (pulsing blue)
+   - **All nearby help request markers** (color-coded by urgency: red/orange/yellow)
    - Emergency resource markers (green)
    - Disaster zone boundary (polygon overlay)
-4. Persistent "Request Help" FAB (bottom-right) always visible
-5. Left slide-in panel (collapsible) with tabs: Alerts, News, Help Feed, Resources
-6. Users can zoom/pan map, click pins for details, search locations, toggle layers
+3. No "Request Help" FAB (responders don't request help)
+4. Left slide-in panel with tabs: Alerts, News, Help Requests, Resources
+5. User can view help requests, mark as responding, filter by type/urgency, navigate to victims
 
 ## Map System (Google Maps API)
 
@@ -52,13 +88,14 @@ This is a **region-specific emergency response app** that gets deployed for spec
 **User Location:**
 - Pulsing blue marker with circular radius showing immediate area
 
-**Help Request Markers:**
+**Help Request Markers (Responder Role Only):**
 - Custom SVG markers with icon badges (medical, food, shelter, rescue, other)
 - Color-coded by urgency:
   - Red: Critical
   - Orange: Urgent
   - Yellow: Standard
 - Marker clustering for dense areas (Google Maps MarkerClusterer)
+- **Not visible to victims** (only responders see these)
 
 **Emergency Resources:**
 - Green custom markers for:
@@ -80,35 +117,53 @@ This is a **region-specific emergency response app** that gets deployed for spec
 
 ## UI Layout & Components
 
-### Main Layout (Globe-Primary Approach)
+### Role Selection Screen
 
-**3D Map Canvas:**
+**Initial Landing (Before Role Selection):**
+- Full viewport centered layout
+- App logo and disaster info at top (e.g., "Turkey Earthquake • Feb 6")
+- Two large glassmorphic cards with role options:
+  - **"I Need Help"** card with victim icon
+  - **"I Want to Provide Help"** card with responder icon
+- Each card shows brief description of role features
+- Selection triggers transition to main map interface
+
+### Main Layout (After Role Selection)
+
+**Map Canvas:**
 - Full viewport background (100vw × 100vh)
 - Google Maps container with custom dark theme
+- Content varies by role (victims see resources only, responders see help requests)
 
 **Top Bar (Fixed):**
 - Glassmorphic header
 - App logo
 - Current disaster info chip (e.g., "Turkey Earthquake • Feb 6")
+- Role indicator badge ("Victim" or "Responder")
 - Location search with autocomplete
-- Settings icon
+- Settings icon (includes "Change Role" option)
 
-**Request Help FAB:**
+**Request Help FAB (Victim Role Only):**
 - Bottom-right floating action button
 - Always visible, high z-index
 - Glassmorphic with red accent glow
 - Opens Dialog modal on click
+- **Not shown to responders**
 
 **Left Slide Panel (Sheet):**
 - Collapsible (default closed on mobile)
 - Toggle button on left edge
-- Contains tabs: Alerts, News, Help Feed, Resources
 - Glassmorphic background with backdrop blur
+- **Tabs vary by role:**
+  - **Victims:** Alerts, News, Resources, My Requests
+  - **Responders:** Alerts, News, Help Requests, Resources
 
 **Right Detail Panel (Sheet):**
 - Slides in when clicking map markers
 - Shows detailed information about selected item
-- Action buttons (Get Directions, Respond, Close)
+- **Action buttons vary by role:**
+  - **Victims:** Get Directions, Close
+  - **Responders:** Get Directions, Mark Responding, Close
 
 ### Key Components (Shadcn/Radix)
 
@@ -158,7 +213,23 @@ This is a **region-specific emergency response app** that gets deployed for spec
 
 ## Core Features
 
-### 1. Request Help
+### 1. Role Selection (Initial Screen)
+
+**Layout:**
+- Centered screen with two large option cards
+- Each card is glassmorphic with icon and description
+- Smooth transition animation on selection
+
+**Options:**
+- **"I Need Help"** → Sets user role to "victim"
+- **"I Want to Provide Help"** → Sets user role to "responder"
+
+**Persistence:**
+- Role stored in localStorage
+- "Change Role" option available in settings
+- Confirmation dialog when changing roles
+
+### 2. Request Help (Victim Role Only)
 
 **Trigger:** Click FAB → Opens Dialog modal
 
@@ -170,20 +241,36 @@ This is a **region-specific emergency response app** that gets deployed for spec
 - Location (auto-filled from GPS, adjustable on map)
 
 **Submission:**
-- Creates marker on map
-- Adds to help requests feed
+- Creates help request in system
+- Visible to all responders on map
+- Adds to victim's "My Requests" tab
 - Stores in localStorage (mock backend)
 - Shows Toast confirmation with request ID
 
-### 2. Help Requests Feed (Left Panel Tab)
+**My Requests Tab (Victim Role):**
+- Shows victim's own help requests
+- Status indicators: Active, Responding (someone is coming), Resolved
+- Can update or cancel requests
+- Shows which responders are coming (if any)
 
-Scrollable list of Cards showing:
-- Help type icon and urgency badge
-- Distance from user (calculated)
-- Time posted (relative: "5 mins ago")
-- Number of people affected
-- Brief description (truncated)
-- "View on Map" button (pans to marker)
+### 3. Help Requests Feed (Responder Role Only)
+
+**Left Panel Tab showing all nearby help requests:**
+- Scrollable list of Cards showing:
+  - Help type icon and urgency badge
+  - Distance from responder (calculated)
+  - Time posted (relative: "5 mins ago")
+  - Number of people affected
+  - Brief description (truncated)
+  - Status: Available, Responding (by someone else), Resolved
+  - "View on Map" button (pans to marker)
+  - "I'm Responding" button to claim the request
+
+**Filters:**
+- By help type (medical, food, shelter, rescue, other)
+- By urgency (critical, urgent, standard)
+- By status (available, all)
+- Sort by: Distance, Time, Urgency
 
 ### 3. News/Updates Tab (Left Panel)
 
@@ -198,7 +285,9 @@ Each update includes:
 - Severity badge
 - Full description
 
-### 4. Emergency Resources Tab (Left Panel)
+### 4. Emergency Resources Tab (Both Roles)
+
+**Available to both victims and responders**
 
 Filterable list of nearby resources:
 - Hospitals/Medical centers
@@ -211,14 +300,33 @@ Each resource shows:
 - Name
 - Distance from user
 - Capacity status (if available)
+- Operating hours/status
 - "Get Directions" button
 
-### 5. Alerts Tab (Left Panel)
+**Filters:**
+- By resource type
+- By distance
+- By availability/capacity
+
+### 5. Alerts Tab (Both Roles)
+
+**Available to both victims and responders**
 
 High-priority notifications:
-- Immediate danger warnings
+- Immediate danger warnings (aftershocks, weather alerts)
 - Evacuation notices
 - Critical system updates
+- Safe zone updates
+
+### 6. News/Updates Tab (Both Roles)
+
+**Available to both victims and responders**
+
+Timeline of disaster updates:
+- Official announcements from authorities
+- Relief organization updates
+- Safety advisories
+- Recovery progress
 
 ## Project Structure
 
@@ -279,19 +387,29 @@ greatagent/
 ## Key Type Definitions
 
 ```typescript
+type UserRole = 'victim' | 'responder'
 type HelpRequestType = 'medical' | 'food' | 'shelter' | 'rescue' | 'other'
 type Urgency = 'critical' | 'urgent' | 'standard'
 type ResourceType = 'hospital' | 'shelter' | 'water' | 'safe-zone'
+type HelpRequestStatus = 'active' | 'responding' | 'resolved'
+
+interface User {
+  id: string
+  role: UserRole
+  location: { lat: number; lng: number }
+}
 
 interface HelpRequest {
   id: string
+  victimId: string
   type: HelpRequestType
   urgency: Urgency
   location: { lat: number; lng: number }
   peopleCount: number
   description?: string
   timestamp: Date
-  status: 'active' | 'responding' | 'resolved'
+  status: HelpRequestStatus
+  responderId?: string  // ID of responder who claimed this request
 }
 
 interface EmergencyResource {
@@ -301,6 +419,7 @@ interface EmergencyResource {
   location: { lat: number; lng: number }
   capacity?: number
   currentOccupancy?: number
+  operatingStatus: 'open' | 'full' | 'closed'
   contact?: string
 }
 
@@ -358,60 +477,94 @@ interface Alert {
 ## Mock Data Approach
 
 Since there's no backend yet:
-- **Help Requests:** Local state (useState/useReducer) + localStorage
+- **User Role:** Stored in localStorage, managed by useUserRole hook
+- **Help Requests:** Local state (useState/useReducer) + localStorage (simulates real-time updates)
 - **News Updates:** Mock data file with sample updates
 - **Emergency Resources:** Mock data file with sample locations
 - **Alerts:** Mock data file with sample alerts
 - **Geolocation:** Browser Geolocation API (with override for testing)
+- **Responder Actions:** Stored in localStorage (tracking which responder claimed which request)
 
 ## Implementation Priorities
 
 1. **Phase 1: Project Setup**
-   - Initialize Vite + React + TypeScript
-   - Configure Tailwind with custom theme
+   - Initialize Vite + React + TypeScript in `frontend/` directory
+   - Configure Tailwind with custom glassmorphic dark theme
    - Set up Shadcn/UI components
    - Install Google Maps dependencies
+   - Create basic type definitions
 
-2. **Phase 2: Core Map**
+2. **Phase 2: Role Selection**
+   - Build RoleSelection screen component
+   - Implement useUserRole hook with localStorage
+   - Create role switching functionality
+   - Design glassmorphic role selection cards
+
+3. **Phase 3: Core Map (Role-Aware)**
    - Implement MapContainer with Google Maps
    - Add user location detection and marker
-   - Create custom marker components
-   - Apply dark theme styling
+   - Create custom marker components (help requests, resources)
+   - Apply dark theme styling to map
+   - Conditional marker rendering based on user role
 
-3. **Phase 3: UI Layout**
-   - Build Header component
-   - Create Request Help FAB
-   - Implement left slide panel (Sheet)
-   - Build right detail panel (Sheet)
+4. **Phase 4: UI Layout (Role-Aware)**
+   - Build Header component with role indicator
+   - Create Request Help FAB (victim role only)
+   - Implement left slide panel with role-specific tabs
+   - Build right detail panel with role-specific actions
 
-4. **Phase 4: Core Features**
+5. **Phase 5: Victim Features**
    - Request Help dialog and form
-   - Help Requests feed with mock data
+   - My Requests tab showing victim's own requests
    - Emergency Resources tab
-   - News/Updates tab
-   - Alerts tab
+   - News/Updates and Alerts tabs
 
-5. **Phase 5: Map Interactions**
-   - Marker clustering
-   - Click handlers for details
-   - Search/autocomplete
+6. **Phase 6: Responder Features**
+   - Help Requests feed showing all nearby requests
+   - Filters for help requests (type, urgency, distance)
+   - "I'm Responding" action to claim requests
+   - Status updates when responders claim requests
+
+7. **Phase 7: Map Interactions**
+   - Marker clustering (help requests for responders)
+   - Click handlers for marker details
+   - Search/autocomplete with Google Places
    - Layer toggles
    - Directions integration
 
-6. **Phase 6: Polish**
+8. **Phase 8: Polish**
    - Responsive design refinement
-   - Animations and transitions
-   - Toast notifications
-   - Loading states
+   - Smooth animations and transitions
+   - Toast notifications for actions
+   - Loading states and skeletons
    - Error handling
+   - Role switching confirmation dialogs
 
 ## Success Criteria
 
-- App loads and detects user location
-- Map displays with dark theme styling
-- User can create help requests
-- Help requests appear as markers on map
+- App loads and shows role selection screen
+- User can choose between victim and responder roles
+- Role persists across page refreshes
+- User location is detected automatically
+- Map displays with dark glassmorphic theme styling
+
+**Victim Role:**
+- Can create help requests via FAB
+- Help requests stored and shown in "My Requests" tab
+- Can see emergency resources on map
+- Cannot see other victims' help requests
+- Can view news, alerts, and resources
+
+**Responder Role:**
+- Can see all nearby help requests on map as markers
+- Can filter help requests by type, urgency, status
+- Can claim requests with "I'm Responding" action
+- Cannot create help requests (no FAB visible)
+- Can view news, alerts, and resources
+
+**General:**
 - Panels slide in/out smoothly
 - All tabs show relevant mock data
 - Responsive on mobile and desktop
 - Glassmorphic theme applied consistently
+- User can switch roles via settings
