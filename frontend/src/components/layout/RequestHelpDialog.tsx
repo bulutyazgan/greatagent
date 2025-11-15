@@ -29,10 +29,13 @@ import {
   Loader2
 } from 'lucide-react';
 import { LocationPicker } from './LocationPicker';
+import { createCase } from '@/services/api';
+import { toast } from 'sonner';
 
 interface RequestHelpDialogProps {
   open: boolean;
   onClose: () => void;
+  onSubmitSuccess?: () => void;
   userLocation: Location | null;
   disaster: DisasterInfo;
 }
@@ -115,6 +118,7 @@ const URGENCY_LEVELS: { value: Urgency; label: string; color: string; descriptio
 export function RequestHelpDialog({
   open,
   onClose,
+  onSubmitSuccess,
   userLocation,
   disaster
 }: RequestHelpDialogProps) {
@@ -165,60 +169,73 @@ export function RequestHelpDialog({
 
     setSubmitting(true);
 
-    // TODO: Replace with actual API call
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const helpRequest = {
-      id: `help-${Date.now()}`,
-      ...formData,
-      peopleCount: parseInt(formData.peopleCount),
-      disasterId: disaster.id,
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-    };
-
-    console.log('Submitting help request:', helpRequest);
-
-    // Save to local storage and download as file
     try {
-      // Save to localStorage
-      const existingRequests = JSON.parse(localStorage.getItem('help_requests') || '[]');
-      existingRequests.push(helpRequest);
-      localStorage.setItem('help_requests', JSON.stringify(existingRequests));
+      // Get user ID from localStorage
+      const userId = localStorage.getItem('beacon_user_id');
 
-      // Download as JSON file
-      const dataStr = JSON.stringify(helpRequest, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(dataBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `help-request-${helpRequest.id}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      if (!userId) {
+        throw new Error('User not registered. Please refresh and try again.');
+      }
+
+      // Create case via API
+      const response = await createCase({
+        user_id: userId,
+        latitude: formData.location!.lat,
+        longitude: formData.location!.lng,
+        raw_problem_description: formData.description,
+      });
+
+      console.log('Case created:', response);
+
+      // Store case ID for tracking
+      localStorage.setItem('last_case_id', response.case_id.toString());
+
+      // Reset form
+      setFormData({
+        type: 'medical',
+        urgency: 'medium',
+        peopleCount: '1',
+        description: '',
+        userName: '',
+        location: userLocation,
+      });
+      setErrors({});
+
+      onClose();
+
+      // Show success toast
+      toast.success('Help request submitted!', {
+        description: 'AI is analyzing your situation and generating safety guidance...',
+      });
+
+      // Trigger refresh callback
+      if (onSubmitSuccess) {
+        onSubmitSuccess();
+      }
+
     } catch (error) {
-      console.error('Error saving help request:', error);
+      console.error('Failed to submit help request:', error);
+
+      let errorMessage = 'Please try again';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        if ('detail' in error && error.detail) {
+          if (typeof error.detail === 'string') {
+            errorMessage = error.detail;
+          } else if (Array.isArray(error.detail)) {
+            errorMessage = error.detail.map((e: any) =>
+              `${e.loc.join('.')}: ${e.msg}`
+            ).join(', ');
+          }
+        }
+      }
+
+      toast.error('Failed to submit request', {
+        description: errorMessage,
+      });
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitting(false);
-
-    // Reset form
-    setFormData({
-      type: 'medical',
-      urgency: 'medium',
-      peopleCount: '1',
-      description: '',
-      userName: '',
-      location: userLocation,
-    });
-    setErrors({});
-
-    onClose();
-
-    // TODO: Show success toast notification
-    alert('Help request submitted successfully! A copy has been saved to your downloads folder.');
   };
 
   const handleClose = () => {

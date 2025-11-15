@@ -1,5 +1,6 @@
 """Tool integrations that LangGraph agents can call."""
 
+import ast
 import json
 import os
 from datetime import datetime
@@ -10,8 +11,12 @@ import requests
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-# NEED TO BE STANDARDIZED, defined here for errors to disappear
-MOCK_DB = {}
+# Initialize MOCK_DB with expected structure for grouping tool
+# NOTE: This will be replaced with real database queries in production
+MOCK_DB = {
+    "cases": {},
+    "case_groups": {}
+}
 
 # --- Valyu DeepSearch Configuration (from helperAgents) ---
 VALYU_BASE_URL = os.getenv("VALYU_BASE_URL", "https://api.valyu.ai/v1")
@@ -124,7 +129,7 @@ def process_case_grouping(case_id: int) -> dict:
         return {"error": "Case not found."}
     if new_case.get("status") != "open":
         return {"error": "Case not open."}
-    lat1, lon1 = eval(new_case["location"])
+    lat1, lon1 = ast.literal_eval(new_case["location"])
     # Find all other open cases, excluding this one
     open_cases = [
         v for k, v in MOCK_DB["cases"].items()
@@ -133,7 +138,7 @@ def process_case_grouping(case_id: int) -> dict:
     # Proximity filter
     nearby_cases = []
     for v in open_cases:
-        lat2, lon2 = eval(v["location"])
+        lat2, lon2 = ast.literal_eval(v["location"])
         if haversine(lat1, lon1, lat2, lon2) <= 500:
             nearby_cases.append(int(v["id"]))
     # Only make group if >=2 others found (3+ total)
@@ -354,7 +359,13 @@ def valyu_deepsearch(**tool_kwargs: Any) -> str:
     return json.dumps(_format_valyu_results(data))
 
 
-# --- All Tools Lists ---
-# Combined list from all branches
-all_tools = [extract_case_from_text, process_case_grouping]
-AVAILABLE_TOOLS = [valyu_deepsearch]
+# --- All Tools List ---
+# Unified list of all available tools for agents
+AVAILABLE_TOOLS = [
+    extract_case_from_text,
+    process_case_grouping,
+    valyu_deepsearch
+]
+
+# Legacy alias for backward compatibility
+all_tools = AVAILABLE_TOOLS

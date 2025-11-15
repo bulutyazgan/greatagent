@@ -1,5 +1,5 @@
 from typing import TypedDict, Annotated, List, Dict, Any, Optional
-from langgraph.prebuilt import add_messages
+from langgraph.graph import add_messages
 import operator
 
 # This is the "memory" of our agent graph.
