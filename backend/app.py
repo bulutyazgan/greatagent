@@ -17,6 +17,12 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import sys
 import os
+import logging
+from uuid import uuid4
+from datetime import datetime, timedelta
+
+# LangSmith client for observability
+from langsmith import Client
 
 # Add current directory to path for service imports
 sys.path.insert(0, os.path.dirname(__file__))
@@ -30,6 +36,16 @@ app = FastAPI(
     description="AI-powered emergency coordination connecting helpers with people in need",
     version="1.0.0"
 )
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("beacon_api")
+
+# Import from main for LangSmith config
+from main import LANGSMITH_PROJECT, LANGSMITH_API_KEY
+
+# Initialize LangSmith client for feedback/metrics
+ls_client = Client()
 
 # Configure CORS
 app.add_middleware(
@@ -158,8 +174,24 @@ def create_case(request: CreateCaseRequest):
     Immediately creates case row with raw text,
     then triggers InputProcessingAgent asynchronously to populate
     structured fields and generate caller guide.
+    
+    Returns case with run_id for LangSmith tracing.
     """
     try:
+        # Generate a unique run ID for LangSmith tracing
+        run_id = str(uuid4())
+        
+        # Metadata for LangSmith filtering
+        metadata = {
+            "endpoint": "/api/cases",
+            "caller_user_id": request.user_id,
+            "location": [request.latitude, request.longitude],
+            "input_length": len(request.raw_problem_description),
+            "emergency_id": request.emergency_id,
+        }
+        
+        logger.info(f"Creating case with run_id={run_id}", extra={"metadata": metadata})
+        
         result = cases.create_case(
             user_id=request.user_id,
             latitude=request.latitude,
@@ -167,8 +199,15 @@ def create_case(request: CreateCaseRequest):
             raw_problem_description=request.raw_problem_description,
             emergency_id=request.emergency_id
         )
+        
+        # Attach run_id to response for client to use in feedback
+        result["run_id"] = run_id
+        
+        logger.info(f"Case created: {result.get('id')} with run_id={run_id}")
+        
         return result
     except Exception as e:
+        logger.error(f"Case creation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -531,6 +570,97 @@ def mark_messages_read_endpoint(request: MarkMessagesReadRequest):
         count = messages.mark_as_read(message_ids=request.message_ids)
         return {"marked_as_read": count}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# LANGSMITH OBSERVABILITY ENDPOINTS
+# ============================================================================
+
+@app.post("/api/feedback")
+async def log_feedback(run_id: str, score: float, comment: Optional[str] = None):
+    """
+    Log user feedback (thumbs up/down) to LangSmith.
+    Used by frontend to rate case handling quality.
+
+    Args:
+        run_id: The LangSmith run ID to attach feedback to
+        score: Score value (1.0 = thumbs up, 0.0 = thumbs down)
+        comment: Optional feedback comment
+    """
+    try:
+        ls_client.create_feedback(
+            run_id=run_id,
+            key="user_rating",
+            score=score,  # 1.0 = thumbs up, 0.0 = thumbs down
+            comment=comment,
+        )
+        logger.info(f"Feedback logged for run {run_id}: score={score}")
+        return {"status": "feedback_logged", "run_id": run_id}
+    except Exception as e:
+        logger.error(f"Feedback logging failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/metrics")
+async def get_metrics(hours: int = Query(1, ge=1, le=24)):
+    """
+    Return aggregated metrics from LangSmith for demo dashboard.
+    Shows performance optimization and robustness.
+
+    Args:
+        hours: Number of hours to look back (default 1, max 24)
+
+    Returns:
+        Aggregated metrics including success rate, latency, token usage, cost estimates
+    """
+    try:
+        # Get runs from specified time window
+        recent_runs = ls_client.list_runs(
+            project_name=LANGSMITH_PROJECT,
+            start_time=datetime.now() - timedelta(hours=hours),
+            limit=1000,
+        )
+
+        runs = list(recent_runs)
+
+        if not runs:
+            return {
+                "time_window_hours": hours,
+                "total_runs": 0,
+                "error": "No runs found in specified time window"
+            }
+
+        # Aggregate metrics
+        total_runs = len(runs)
+        successful = sum(1 for r in runs if r.status == "success")
+        failed = sum(1 for r in runs if r.status == "error")
+        avg_latency = sum(r.latency or 0 for r in runs) / total_runs if total_runs > 0 else 0
+
+        # Token usage (if available in metadata)
+        total_tokens = 0
+        for r in runs:
+            if r.metadata and "token_usage" in r.metadata:
+                total_tokens += r.metadata["token_usage"]
+
+        # Calculate cost estimate (approximate for Claude 3.5 Haiku input tokens)
+        cost_estimate = (total_tokens / 1000) * 0.003
+
+        logger.info(f"Metrics query: {total_runs} runs in {hours}h, {successful} successful")
+
+        return {
+            "time_window_hours": hours,
+            "total_runs": total_runs,
+            "successful": successful,
+            "failed": failed,
+            "success_rate": successful / total_runs if total_runs > 0 else 0,
+            "avg_latency_seconds": avg_latency,
+            "total_tokens": total_tokens,
+            "cost_estimate_usd": round(cost_estimate, 4),
+            "cost_per_run_usd": round(cost_estimate / total_runs, 6) if total_runs > 0 else 0,
+        }
+    except Exception as e:
+        logger.error(f"Metrics query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

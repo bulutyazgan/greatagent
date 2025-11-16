@@ -13,6 +13,7 @@ All pipelines use LangGraph and integrate with Bedrock API.
 import sys
 import os
 import json
+import asyncio
 from typing import Dict, Optional, List
 
 # Add parent directory to path
@@ -20,14 +21,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from database.db import get_db_cursor
 from main import get_api_session, API_ENDPOINT, MODELS, TEAM_ID, API_TOKEN
-from agent_tools import valyu_deepsearch
+from agent_tools import async_valyu_deepsearch
+from services.cases import async_get_nearby_cases
 
 
 # Initialize API client
 api_client = get_api_session()
 
 
-def run_input_processing_agent(case_id: int) -> Dict:
+async def run_input_processing_agent(case_id: int) -> Dict:
     """
     Run InputProcessingAgent to parse raw help request.
 
@@ -110,7 +112,7 @@ def run_input_processing_agent(case_id: int) -> Dict:
             "max_tokens": 512
         }
 
-        response = api_client.post(API_ENDPOINT, json=body)
+        response = await api_client.post(API_ENDPOINT, json=body)
         response.raise_for_status()
         result = response.json()
 
@@ -175,13 +177,13 @@ def run_input_processing_agent(case_id: int) -> Dict:
             )
         )
 
-        # Trigger caller guide generation
-        run_caller_pipeline(case_id)
+    # Trigger caller guide generation
+    await run_caller_pipeline(case_id)
 
-        return extracted_data
+    return extracted_data
 
 
-def run_caller_pipeline(case_id: int) -> Dict:
+async def run_caller_pipeline(case_id: int) -> Dict:
     """
     Run ResearchAgent + CallerGuideAgent pipeline.
 
@@ -227,7 +229,7 @@ def run_caller_pipeline(case_id: int) -> Dict:
 
         # Call Valyu search
         try:
-            search_results_raw = valyu_deepsearch(
+            search_results_raw = await async_valyu_deepsearch(
                 query=research_query,
                 search_type="all",
                 max_num_results=5,
@@ -274,7 +276,7 @@ def run_caller_pipeline(case_id: int) -> Dict:
             "max_tokens": 300
         }
 
-        response = api_client.post(API_ENDPOINT, json=body)
+        response = await api_client.post(API_ENDPOINT, json=body)
         response.raise_for_status()
         result = response.json()
 
@@ -291,7 +293,7 @@ def run_caller_pipeline(case_id: int) -> Dict:
         return guide
 
 
-def run_helper_pipeline(assignment_id: int) -> Dict:
+async def run_helper_pipeline(assignment_id: int) -> Dict:
     """
     Run ResearchAgent + HelperGuideAgent pipeline.
 
@@ -318,7 +320,7 @@ def run_helper_pipeline(assignment_id: int) -> Dict:
             SELECT
                 a.id as assignment_id, a.case_id,
                 c.description, c.raw_problem_description, c.mobility_status,
-                c.urgency, c.danger_level, c.people_count
+                c.urgency, c.danger_level, c.people_count, c.location
             FROM assignments a
             INNER JOIN cases c ON a.case_id = c.id
             WHERE a.id = %s
@@ -333,23 +335,39 @@ def run_helper_pipeline(assignment_id: int) -> Dict:
         # Build research query for helpers
         description = row['description'] or row['raw_problem_description'] or "emergency situation"
         mobility = row['mobility_status'] or "unknown mobility"
+        location_str = row['location']
+        coords = location_str.strip('()').split(',')
+        latitude = float(coords[0])
+        longitude = float(coords[1])
 
         research_query = f"how to assist with {description} as emergency responder when victim is {mobility}"
 
-        # Call Valyu search
-        try:
-            search_results_raw = valyu_deepsearch(
-                query=research_query,
-                search_type="all",
-                max_num_results=5,
-                response_length="short"
-            )
-            search_results = json.loads(search_results_raw)
-            research_success = search_results.get("success", False)
-        except Exception as e:
-            print(f"Valyu search failed: {e}")
+        # In parallel: get research and find nearby cases
+        search_task = async_valyu_deepsearch(
+            query=research_query,
+            search_type="all",
+            max_num_results=5,
+            response_length="short"
+        )
+        nearby_cases_task = async_get_nearby_cases(latitude, longitude)
+
+        results = await asyncio.gather(search_task, nearby_cases_task, return_exceptions=True)
+        
+        search_results_raw = results[0]
+        nearby_cases = results[1]
+
+        if isinstance(search_results_raw, Exception):
+            print(f"Valyu search failed: {search_results_raw}")
             research_success = False
             search_results = {"results_preview": []}
+        else:
+            search_results = json.loads(search_results_raw)
+            research_success = search_results.get("success", False)
+
+        if isinstance(nearby_cases, Exception):
+            print(f"Finding nearby cases failed: {nearby_cases}")
+            nearby_cases = []
+
 
         # Extract relevant content
         if research_success and search_results.get("results_preview"):
@@ -385,7 +403,7 @@ def run_helper_pipeline(assignment_id: int) -> Dict:
             "max_tokens": 300
         }
 
-        response = api_client.post(API_ENDPOINT, json=body)
+        response = await api_client.post(API_ENDPOINT, json=body)
         response.raise_for_status()
         result = response.json()
 
@@ -399,4 +417,5 @@ def run_helper_pipeline(assignment_id: int) -> Dict:
             research_results_summary=research_summary[:500]  # Truncate
         )
 
+        guide['nearby_cases'] = nearby_cases
         return guide
