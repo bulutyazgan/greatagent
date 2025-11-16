@@ -504,98 +504,95 @@ export function MyCasePanel({ caseId }: MyCasePanelProps) {
     setRouteDuration(duration);
   };
 
-  // Show loading state while case data is being fetched
-  if (!caseData || !caseLocation) {
-    return (
-      <div className="fixed inset-0 bg-background-primary flex items-center justify-center">
-        <div className="glass p-8 rounded-lg text-center">
-          <Clock className="w-12 h-12 text-blue-400 animate-pulse mx-auto mb-4" />
-          <p className="text-white font-medium text-lg mb-2">Loading your case information...</p>
-          <p className="text-gray-400 text-sm">Please wait while we retrieve your details</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 pt-16 flex flex-col lg:flex-row">
       {/* Map Section - Left side on desktop, top on mobile */}
       <div className="flex-1 h-1/2 lg:h-full lg:w-1/2 relative">
-        {/* Show RouteMap if helper is assigned, otherwise show regular MapContainer */}
-        {helperInfo && helperLocation ? (
-          <RouteMap
-            helperLocation={helperLocation}
-            victimLocation={caseLocation}
-            onRouteCalculated={handleRouteCalculated}
-          />
-        ) : (
-          <MapContainer
-            center={caseLocation}
-            zoom={16}
-            helpRequests={helpRequest ? [helpRequest] : []}
-            userLocation={caseLocation}
-            onMarkerClick={() => {}}
-          />
-        )}
-
-        {/* Status Overlay - Fixed position on map */}
-        <div className="absolute top-6 right-4 z-10 mt-4">
-          <div className="glass rounded-lg p-4 min-w-[200px] border border-white/10 shadow-2xl">
-            <div className="flex items-center gap-2 mb-2">
-              {helperInfo ? (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  <span className="text-sm text-white font-medium">Responder On The Way</span>
-                </>
-              ) : (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                  <span className="text-sm text-white font-medium">Request Status</span>
-                </>
-              )}
-            </div>
-
-            {helperInfo ? (
-              <>
-                <p className="text-xs text-green-300 font-semibold mb-1">
-                  {helperInfo.name} is responding
-                </p>
-                {routeDistance && routeDuration && (
-                  <>
-                    <div className="flex items-center gap-1 mb-1">
-                      <Navigation className="w-3 h-3 text-green-400" />
-                      <p className="text-xs text-gray-300">
-                        {routeDistance}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 mb-1">
-                      <Clock className="w-3 h-3 text-blue-400" />
-                      <p className="text-xs text-gray-300">
-                        ETA: {routeDuration}
-                      </p>
-                    </div>
-                  </>
-                )}
-                <p className="text-xs text-gray-500">
-                  Help is on the way. Stay safe!
-                </p>
-              </>
+        {caseLocation ? (
+          <>
+            {/* Show RouteMap if helper is assigned, otherwise show regular MapContainer */}
+            {helperInfo && helperLocation ? (
+              <RouteMap
+                helperLocation={helperLocation}
+                victimLocation={caseLocation}
+                onRouteCalculated={handleRouteCalculated}
+              />
             ) : (
-              <>
-                <p className="text-xs text-gray-400 mb-1">
-                  Waiting for responder
-                </p>
-                <p className="text-xs text-gray-500">
-                  Your location is visible to nearby helpers
-                </p>
-              </>
+              <MapContainer
+                center={caseLocation}
+                zoom={16}
+                helpRequests={helpRequest ? [helpRequest] : []}
+                userLocation={caseLocation}
+                onMarkerClick={() => {}}
+              />
             )}
 
-            <div className="mt-2 pt-2 border-t border-white/10">
-              <p className="text-xs text-gray-400">Case #{caseId}</p>
+            {/* Status Overlay - Fixed position on map */}
+            <div className="absolute top-6 right-4 z-10 mt-4">
+              <div className="glass rounded-lg p-4 min-w-[200px] border border-white/10 shadow-2xl">
+                <div className="flex items-center gap-2 mb-2">
+                  {helperInfo ? (
+                    <>
+                      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                      <span className="text-sm text-white font-medium">Responder On The Way</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                      <span className="text-sm text-white font-medium">Request Status</span>
+                    </>
+                  )}
+                </div>
+
+                {helperInfo ? (
+                  <>
+                    <p className="text-xs text-green-300 font-semibold mb-1">
+                      {helperInfo.name} is responding
+                    </p>
+                    {routeDistance && routeDuration && (
+                      <>
+                        <div className="flex items-center gap-1 mb-1">
+                          <Navigation className="w-3 h-3 text-green-400" />
+                          <p className="text-xs text-gray-300">
+                            {routeDistance}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 mb-1">
+                          <Clock className="w-3 h-3 text-blue-400" />
+                          <p className="text-xs text-gray-300">
+                            ETA: {routeDuration}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      Help is on the way. Stay safe!
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-gray-400 mb-1">
+                      Waiting for responder
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Your location is visible to nearby helpers
+                    </p>
+                  </>
+                )}
+
+                <div className="mt-2 pt-2 border-t border-white/10">
+                  <p className="text-xs text-gray-400">Case #{caseId}</p>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-background-primary flex items-center justify-center">
+            <div className="glass p-6 rounded-lg">
+              <p className="text-gray-400">Loading your location...</p>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Panel Section - Right side on desktop, bottom on mobile */}
