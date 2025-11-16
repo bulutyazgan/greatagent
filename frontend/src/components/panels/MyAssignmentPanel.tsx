@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FileText, Shield, Send, Clock, Maximize2, Minimize2, MapPin, Users, AlertTriangle, Navigation } from 'lucide-react';
-import { getHelperGuide, type HelperGuide, type Case, getCase, getAssignment, type Assignment } from '@/services/api';
+import {
+  getHelperGuide,
+  type HelperGuide,
+  type Case,
+  getCase,
+  getAssignment,
+  type Assignment,
+  createAgentMessage,
+  getUnreadMessages,
+  type AgentMessage
+} from '@/services/api';
 import { RouteMap } from '@/components/map/RouteMap';
 import type { Location, HelpRequest } from '@/types';
 
@@ -123,55 +133,103 @@ export function MyAssignmentPanel({ assignmentId }: MyAssignmentPanelProps) {
     return () => clearInterval(interval);
   }, [assignmentId, loading, chatMessages.length]);
 
+  // Poll for victim responses (messages from victim to helper)
+  useEffect(() => {
+    if (!caseData) return;
+
+    const pollVictimMessages = async () => {
+      try {
+        const response = await getUnreadMessages(assignmentId, 'helper_agent');
+
+        if (response.unread_messages && response.unread_messages.length > 0) {
+          // Convert AgentMessages to ChatMessages and add to chat
+          const newMessages: ChatMessage[] = response.unread_messages.map((msg: AgentMessage) => ({
+            id: `victim-${msg.message_id}`,
+            text: msg.message_text,
+            timestamp: new Date(msg.created_at),
+            sender: 'user' as const, // Victim's messages appear as 'user' in helper's chat
+          }));
+
+          setChatMessages(prev => [...prev, ...newMessages]);
+        }
+      } catch (err) {
+        console.error('[MyAssignmentPanel] Failed to poll victim messages:', err);
+      }
+    };
+
+    // Poll immediately, then every 3 seconds
+    pollVictimMessages();
+    const interval = setInterval(pollVictimMessages, 3000);
+
+    return () => clearInterval(interval);
+  }, [assignmentId, caseData]);
+
   const handleSubmitUpdate = async () => {
-    if (!updateText.trim()) return;
+    if (!updateText.trim() || !caseData) return;
 
     setSubmittingUpdate(true);
     try {
-      // TODO: Call API to submit update
-      // await submitHelperUpdate(assignmentId, updateText);
-
-      // Simulate API call for now
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Add user message to chat
+      // Add user message to chat FIRST (optimistic UI)
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         text: updateText,
         timestamp: new Date(),
         sender: 'user',
       };
+      setChatMessages(prev => [...prev, userMessage]);
 
-      // Generate relevant Hero Agent follow-up question based on update
-      const generateFollowUpQuestion = (update: string): string => {
-        const lowerUpdate = update.toLowerCase();
+      const lowerUpdate = updateText.toLowerCase();
 
-        if (lowerUpdate.includes('arrived') || lowerUpdate.includes('location')) {
-          return "Great! You've arrived at the location. Can you confirm visual contact with the person in need? What's the current situation?";
-        } else if (lowerUpdate.includes('problem') || lowerUpdate.includes('issue') || lowerUpdate.includes('difficult')) {
-          return "I understand there are new challenges. Should we request additional helpers nearby to assist you? What specific resources do you need?";
-        } else if (lowerUpdate.includes('more info') || lowerUpdate.includes('unclear') || lowerUpdate.includes('question')) {
-          return "I'll help you get more information from the caller. What specific details do you need to proceed safely?";
-        } else if (lowerUpdate.includes('complete') || lowerUpdate.includes('done') || lowerUpdate.includes('resolved')) {
-          return "Excellent work! Can you confirm the person is now safe? Do they need any follow-up assistance or medical attention?";
-        } else if (lowerUpdate.includes('medical') || lowerUpdate.includes('injury') || lowerUpdate.includes('hurt')) {
-          return "Medical situation noted. Do you need emergency medical services dispatched? Should I request helpers with medical training nearby?";
-        } else if (lowerUpdate.includes('multiple') || lowerUpdate.includes('more people') || lowerUpdate.includes('group')) {
-          return "Multiple people detected. This may require additional support. Should we request more helpers to assist with the increased number of people?";
-        } else {
-          return "Thank you for the update. Your situation has been logged. Is there anything specific you need assistance with right now?";
-        }
-      };
+      // Determine if this is a request for information from the victim
+      const isRequestingInfo = lowerUpdate.includes('more info') ||
+                               lowerUpdate.includes('unclear') ||
+                               lowerUpdate.includes('question') ||
+                               lowerUpdate.includes('need to know');
 
-      // Simulate Hero Agent response with contextual follow-up
-      const heroResponse: ChatMessage = {
-        id: `hero-${Date.now()}`,
-        text: generateFollowUpQuestion(updateText),
-        timestamp: new Date(),
-        sender: 'hero_agent',
-      };
+      if (isRequestingInfo) {
+        // Send question to victim via API
+        await createAgentMessage({
+          assignment_id: assignmentId,
+          case_id: caseData.case_id,
+          sender: 'helper_agent',
+          message_type: 'question',
+          message_text: `The responder needs more information: "${updateText}"\n\nPlease provide additional details to help them assist you better.`,
+        });
 
-      setChatMessages(prev => [...prev, userMessage, heroResponse]);
+        // Add confirmation to helper's chat
+        const confirmMessage: ChatMessage = {
+          id: `hero-${Date.now()}`,
+          text: "✓ Question sent to the victim. They will receive your message and can respond with more details.",
+          timestamp: new Date(),
+          sender: 'hero_agent',
+        };
+        setChatMessages(prev => [...prev, confirmMessage]);
+      } else {
+        // Regular status update - just save locally and generate AI response
+        const generateFollowUpQuestion = (update: string): string => {
+          if (update.includes('arrived') || update.includes('location')) {
+            return "Great! You've arrived at the location. Can you confirm visual contact with the person in need? What's the current situation?";
+          } else if (update.includes('problem') || update.includes('issue') || update.includes('difficult')) {
+            return "I understand there are new challenges. Should we request additional helpers nearby to assist you? What specific resources do you need?";
+          } else if (update.includes('complete') || update.includes('done') || update.includes('resolved')) {
+            return "Excellent work! Can you confirm the person is now safe? Do they need any follow-up assistance or medical attention?";
+          } else if (update.includes('medical') || update.includes('injury') || update.includes('hurt')) {
+            return "Medical situation noted. Do you need emergency medical services dispatched? Should I request helpers with medical training nearby?";
+          } else if (update.includes('multiple') || update.includes('more people') || update.includes('group')) {
+            return "Multiple people detected. This may require additional support. Should we request more helpers to assist with the increased number of people?";
+          } else {
+            return "Thank you for the update. Your situation has been logged. Is there anything specific you need assistance with right now?";
+          }
+        };
+
+        const heroResponse: ChatMessage = {
+          id: `hero-${Date.now()}`,
+          text: generateFollowUpQuestion(lowerUpdate),
+          timestamp: new Date(),
+          sender: 'hero_agent',
+        };
+        setChatMessages(prev => [...prev, heroResponse]);
+      }
 
       // Clear input
       setUpdateText('');
@@ -234,20 +292,45 @@ export function MyAssignmentPanel({ assignmentId }: MyAssignmentPanelProps) {
   };
 
   const handleQuickAction = async (actionValue: string, actionLabel: string) => {
+    if (!caseData) return;
+
     setSubmittingUpdate(true);
     try {
-      // Immediately send the quick action
+      // Add user message to chat
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         text: actionLabel,
         timestamp: new Date(),
         sender: 'user',
       };
+      setChatMessages(prev => [...prev, userMessage]);
 
-      // Generate contextual response
-      const heroResponse = generateContextualResponse(actionValue);
+      // Check if this is "Request More Info" - if so, send question to victim
+      const isRequestingInfo = actionLabel.toLowerCase().includes('more info');
 
-      setChatMessages(prev => [...prev, userMessage, heroResponse]);
+      if (isRequestingInfo) {
+        // Send question to victim via API
+        await createAgentMessage({
+          assignment_id: assignmentId,
+          case_id: caseData.case_id,
+          sender: 'helper_agent',
+          message_type: 'question',
+          message_text: "The responder needs additional information to help you. Can you provide more details about your current situation, exact location, and any specific challenges you're facing?",
+        });
+
+        // Add confirmation to helper's chat
+        const confirmMessage: ChatMessage = {
+          id: `hero-${Date.now()}`,
+          text: "✓ Question sent to the victim. They will be asked for more details about their situation.",
+          timestamp: new Date(),
+          sender: 'hero_agent',
+        };
+        setChatMessages(prev => [...prev, confirmMessage]);
+      } else {
+        // Generate contextual response for other actions
+        const heroResponse = generateContextualResponse(actionValue);
+        setChatMessages(prev => [...prev, heroResponse]);
+      }
 
     } catch (err) {
       console.error('Failed to submit update:', err);

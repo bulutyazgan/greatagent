@@ -21,7 +21,7 @@ import os
 # Add current directory to path for service imports
 sys.path.insert(0, os.path.dirname(__file__))
 
-from services import users, cases, helpers, guides
+from services import users, cases, helpers, guides, messages
 
 # Create FastAPI app
 app = FastAPI(
@@ -72,6 +72,21 @@ class CreateAssignmentRequest(BaseModel):
 class CompleteAssignmentRequest(BaseModel):
     outcome: str = Field(..., description="Outcome description")
     notes: Optional[str] = Field(None, description="Completion notes")
+
+
+class CreateMessageRequest(BaseModel):
+    assignment_id: int = Field(..., description="Assignment ID")
+    case_id: int = Field(..., description="Case ID")
+    sender: str = Field(..., description="helper_agent, victim_agent, helper_user, or victim_user")
+    message_type: str = Field(..., description="question, answer, status_update, or guidance")
+    message_text: str = Field(..., description="Message content")
+    options: Optional[List[dict]] = Field(None, description="Button options for questions")
+    question_type: Optional[str] = Field(None, description="single or multiple")
+    in_response_to: Optional[int] = Field(None, description="Message ID responding to")
+
+
+class MarkMessagesReadRequest(BaseModel):
+    message_ids: List[int] = Field(..., description="List of message IDs to mark as read")
 
 
 # ============================================================================
@@ -397,6 +412,120 @@ def get_route_to_case(
         }
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# AGENT MESSAGES ENDPOINTS (Bidirectional Communication)
+# ============================================================================
+
+@app.post("/api/messages", status_code=201)
+def create_message(request: CreateMessageRequest):
+    """
+    Create a new agent message (helper → victim or victim → helper).
+
+    Enables bidirectional communication during an active assignment.
+    Messages can be questions, answers, status updates, or guidance.
+    """
+    try:
+        result = messages.create_message(
+            assignment_id=request.assignment_id,
+            case_id=request.case_id,
+            sender=request.sender,
+            message_type=request.message_type,
+            message_text=request.message_text,
+            options=request.options,
+            question_type=request.question_type,
+            in_response_to=request.in_response_to
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/assignments/{assignment_id}/messages")
+def get_assignment_messages(
+    assignment_id: int,
+    sender_filter: Optional[str] = Query(None, description="Filter by sender type"),
+    limit: int = Query(100, ge=1, le=500)
+):
+    """
+    Get all messages for an assignment (conversation history).
+
+    Returns messages in chronological order.
+    Optionally filter by sender type.
+    """
+    try:
+        msgs = messages.get_messages(
+            assignment_id=assignment_id,
+            sender_filter=sender_filter,
+            limit=limit
+        )
+        return {"assignment_id": assignment_id, "messages": msgs, "count": len(msgs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/assignments/{assignment_id}/messages/unread")
+def get_unread_messages_endpoint(
+    assignment_id: int,
+    for_sender: str = Query(..., description="helper_agent or victim_agent")
+):
+    """
+    Get unread messages for a specific recipient.
+
+    Used for polling: helper polls for victim messages, victim polls for helper messages.
+    Returns only messages sent by the OTHER party.
+    """
+    try:
+        msgs = messages.get_unread_messages(
+            assignment_id=assignment_id,
+            for_sender=for_sender
+        )
+        return {"assignment_id": assignment_id, "unread_messages": msgs, "count": len(msgs)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/assignments/{assignment_id}/messages/latest-question")
+def get_latest_question_endpoint(
+    assignment_id: int,
+    for_sender: str = Query(..., description="helper_agent or victim_agent")
+):
+    """
+    Get the latest unanswered question from the other party.
+
+    Useful for displaying pending questions that need a response.
+    """
+    try:
+        question = messages.get_latest_question(
+            assignment_id=assignment_id,
+            for_sender=for_sender
+        )
+        if not question:
+            return {"assignment_id": assignment_id, "question": None}
+        return {"assignment_id": assignment_id, "question": question}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/messages/mark-read")
+def mark_messages_read_endpoint(request: MarkMessagesReadRequest):
+    """
+    Mark messages as read.
+
+    Updates read_by_recipient flag and sets read_at timestamp.
+    """
+    try:
+        count = messages.mark_as_read(message_ids=request.message_ids)
+        return {"marked_as_read": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

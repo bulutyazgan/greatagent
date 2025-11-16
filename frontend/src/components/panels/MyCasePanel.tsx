@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import { FileText, Shield, Send, Clock, ChevronUp, ChevronDown, Maximize2, Minimize2, Navigation } from 'lucide-react';
-import { getCallerGuide, type CallerGuide, type Case, getCase, getCaseAssignments, getUser } from '@/services/api';
+import {
+  getCallerGuide,
+  type CallerGuide,
+  type Case,
+  getCase,
+  getCaseAssignments,
+  getUser,
+  createAgentMessage,
+  getUnreadMessages,
+  type AgentMessage,
+} from '@/services/api';
 import { MapContainer } from '@/components/map/MapContainer';
 import { RouteMap } from '@/components/map/RouteMap';
 import type { Location, HelpRequest } from '@/types';
@@ -156,6 +166,52 @@ export function MyCasePanel({ caseId }: MyCasePanelProps) {
 
     return () => clearInterval(interval);
   }, [caseId, caseData]);
+
+  // Poll for helper questions (messages from helper to victim)
+  useEffect(() => {
+    if (assignments.length === 0) return;
+
+    const activeAssignment = assignments.find(a => !a.completed_at);
+    if (!activeAssignment) return;
+
+    const pollHelperMessages = async () => {
+      try {
+        const response = await getUnreadMessages(activeAssignment.id, 'victim_agent');
+
+        if (response.unread_messages && response.unread_messages.length > 0) {
+          // Convert AgentMessages to ChatMessages and add to chat
+          const newMessages: ChatMessage[] = response.unread_messages.map((msg: AgentMessage) => ({
+            id: `helper-${msg.message_id}`,
+            text: msg.message_text,
+            timestamp: new Date(msg.created_at),
+            sender: 'hero_agent' as const, // Helper's messages appear as 'hero_agent' in victim's chat
+            options: msg.options ? msg.options.map(opt => ({
+              id: opt.id,
+              label: opt.label,
+              value: opt.label,
+            })) : undefined,
+            questionType: msg.question_type as 'single' | 'multiple' | undefined,
+          }));
+
+          setChatMessages(prev => [...prev, ...newMessages]);
+
+          // If the latest message has options, set it as pending question
+          const latestMessage = newMessages[newMessages.length - 1];
+          if (latestMessage.options) {
+            setPendingQuestion(latestMessage);
+          }
+        }
+      } catch (err) {
+        console.error('[MyCasePanel] Failed to poll helper messages:', err);
+      }
+    };
+
+    // Poll immediately, then every 3 seconds
+    pollHelperMessages();
+    const interval = setInterval(pollHelperMessages, 3000);
+
+    return () => clearInterval(interval);
+  }, [assignments]);
 
   const handleButtonSelect = async (option: ButtonOption) => {
     if (!pendingQuestion) return;
@@ -324,25 +380,40 @@ export function MyCasePanel({ caseId }: MyCasePanelProps) {
 
     setSubmittingUpdate(true);
     try {
-      // TODO: Call API to submit update
-      // await submitCaseUpdate(caseId, updateText);
-
-      // Simulate API call for now
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Add user message to chat
+      // Add user message to chat FIRST (optimistic UI)
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         text: updateText,
         timestamp: new Date(),
         sender: 'user',
       };
+      setChatMessages(prev => [...prev, userMessage]);
 
-      // Analyze free-text update and generate smart response
-      const heroResponse = analyzeFreeTextUpdate(updateText);
+      // If there's an active assignment, send response to helper via API
+      const activeAssignment = assignments.find(a => !a.completed_at);
+      if (activeAssignment) {
+        await createAgentMessage({
+          assignment_id: activeAssignment.id,
+          case_id: caseId,
+          sender: 'victim_agent',
+          message_type: 'answer',
+          message_text: updateText,
+        });
 
-      setChatMessages(prev => [...prev, userMessage, heroResponse]);
-      setPendingQuestion(heroResponse.options ? heroResponse : null);
+        // Show confirmation
+        const confirmMessage: ChatMessage = {
+          id: `hero-${Date.now()}`,
+          text: "✓ Your message has been sent to the responder. They will receive your update.",
+          timestamp: new Date(),
+          sender: 'hero_agent',
+        };
+        setChatMessages(prev => [...prev, confirmMessage]);
+      } else {
+        // No active assignment - generate local AI response
+        const heroResponse = analyzeFreeTextUpdate(updateText);
+        setChatMessages(prev => [...prev, heroResponse]);
+        setPendingQuestion(heroResponse.options ? heroResponse : null);
+      }
 
       // Clear input
       setUpdateText('');

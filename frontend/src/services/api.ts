@@ -329,6 +329,103 @@ export async function completeAssignment(
 }
 
 // ============================================================================
+// AGENT MESSAGES (Bidirectional Communication)
+// ============================================================================
+
+export interface AgentMessage {
+  message_id: number;
+  assignment_id: number;
+  case_id: number;
+  sender: 'helper_agent' | 'victim_agent' | 'helper_user' | 'victim_user';
+  message_type: 'question' | 'answer' | 'status_update' | 'guidance';
+  message_text: string;
+  options?: Array<{ id: string; label: string }> | null;
+  question_type?: 'single' | 'multiple' | null;
+  in_response_to?: number | null;
+  read_by_recipient: boolean;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface CreateMessageRequest {
+  assignment_id: number;
+  case_id: number;
+  sender: 'helper_agent' | 'victim_agent' | 'helper_user' | 'victim_user';
+  message_type: 'question' | 'answer' | 'status_update' | 'guidance';
+  message_text: string;
+  options?: Array<{ id: string; label: string }> | null;
+  question_type?: 'single' | 'multiple' | null;
+  in_response_to?: number | null;
+}
+
+/**
+ * Create a new agent message.
+ */
+export async function createAgentMessage(request: CreateMessageRequest): Promise<AgentMessage> {
+  const response = await fetch(`${API_BASE_URL}/api/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<AgentMessage>(response);
+}
+
+/**
+ * Get all messages for an assignment (conversation history).
+ */
+export async function getAssignmentMessages(
+  assignmentId: number,
+  senderFilter?: string
+): Promise<{ assignment_id: number; messages: AgentMessage[]; count: number }> {
+  const params = new URLSearchParams();
+  if (senderFilter) params.append('sender_filter', senderFilter);
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/assignments/${assignmentId}/messages?${params}`
+  );
+  return handleResponse(response);
+}
+
+/**
+ * Get unread messages for a specific recipient.
+ * Used for polling.
+ */
+export async function getUnreadMessages(
+  assignmentId: number,
+  forSender: 'helper_agent' | 'victim_agent'
+): Promise<{ assignment_id: number; unread_messages: AgentMessage[]; count: number }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assignments/${assignmentId}/messages/unread?for_sender=${forSender}`
+  );
+  return handleResponse(response);
+}
+
+/**
+ * Get the latest unanswered question from the other party.
+ */
+export async function getLatestQuestion(
+  assignmentId: number,
+  forSender: 'helper_agent' | 'victim_agent'
+): Promise<{ assignment_id: number; question: AgentMessage | null }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assignments/${assignmentId}/messages/latest-question?for_sender=${forSender}`
+  );
+  return handleResponse(response);
+}
+
+/**
+ * Mark messages as read.
+ */
+export async function markMessagesAsRead(messageIds: number[]): Promise<{ marked_as_read: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/messages/mark-read`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message_ids: messageIds }),
+  });
+  return handleResponse(response);
+}
+
+// ============================================================================
 // HEALTH CHECK
 // ============================================================================
 
