@@ -1,4 +1,4 @@
-````markdown name=README.md url=https://github.com/bulutyazgan/beaconn/blob/main/README.md
+
 # Beacon / Beaconn — Emergency Response Coordination System
 
 Beacon (beaconn) is an AI-powered emergency response coordination platform developed during the Great Agent Hack at UCL. It combines LangGraph-style agent orchestration, LangChain tooling, and modern web technologies to coordinate helpers and people in need during large-scale disasters.
@@ -121,4 +121,3 @@ If you want, I can:
 - Open a PR that replaces the current README.md with this updated content.
 - Extract and merge key snippets from IMPLEMENTATION_SUMMARY.md and QUICKSTART.md into this file for an even more comprehensive single-file doc.
 
-````
