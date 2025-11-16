@@ -637,39 +637,30 @@ async def get_metrics(hours: int = Query(1, ge=1, le=24)):
         failed = sum(1 for r in runs if r.status == "error")
         avg_latency = sum(r.latency or 0 for r in runs) / total_runs if total_runs > 0 else 0
 
-        # Token usage - check multiple locations where tokens might be stored
+        # Token usage - extract from multiple sources
         total_tokens = 0
-        input_tokens = 0
-        output_tokens = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         for r in runs:
-            # Check metadata first (new approach using add_metadata)
-            if r.metadata and "usage" in r.metadata:
-                usage = r.metadata["usage"]
-                total_tokens += usage.get("total_tokens", 0)
-                input_tokens += usage.get("input_tokens", 0)
-                output_tokens += usage.get("output_tokens", 0)
-            # Check extra field (fallback)
-            elif r.extra and "usage" in r.extra:
-                usage = r.extra["usage"]
-                total_tokens += usage.get("total_tokens", 0)
-                input_tokens += usage.get("input_tokens", 0)
-                output_tokens += usage.get("output_tokens", 0)
-            # Check legacy metadata format
-            elif r.metadata and "token_usage" in r.metadata:
-                total_tokens += r.metadata["token_usage"]
-            # Check outputs for token information
-            elif hasattr(r, 'outputs') and r.outputs and "tokens" in r.outputs:
-                total_tokens += r.outputs["tokens"]
+            # Try to get from outputs (where we return it)
+            if r.outputs and isinstance(r.outputs, dict):
+                token_data = r.outputs.get("token_usage", {})
+                if isinstance(token_data, dict):
+                    total_input_tokens += token_data.get("input_tokens", 0)
+                    total_output_tokens += token_data.get("output_tokens", 0)
+                    total_tokens += token_data.get("total_tokens", 0)
 
-        # Calculate cost estimate
-        # Claude 3.5 Haiku: $0.80/MTok input, $4.00/MTok output
-        # Claude 3.5 Sonnet: $3.00/MTok input, $15.00/MTok output
-        # Using blended rate for now
-        cost_estimate = (input_tokens / 1_000_000) * 3.0 + (output_tokens / 1_000_000) * 15.0
+            # Also check metadata
+            if r.metadata and "token_usage" in r.metadata:
+                if isinstance(r.metadata["token_usage"], int):
+                    total_tokens += r.metadata["token_usage"]
+                elif isinstance(r.metadata["token_usage"], dict):
+                    total_tokens += r.metadata["token_usage"].get("total_tokens", 0)
 
-        # Calculate carbon footprint (rough estimate: ~0.5g CO2 per 1000 tokens)
-        carbon_footprint_g = (total_tokens / 1000) * 0.5
+        # Calculate cost estimate for Claude 3.5 Haiku
+        # Input: $0.80 per million tokens, Output: $4.00 per million tokens
+        cost_estimate = (total_input_tokens / 1_000_000) * 0.80 + (total_output_tokens / 1_000_000) * 4.00
 
         logger.info(f"Metrics query: {total_runs} runs in {hours}h, {successful} successful")
 
@@ -681,11 +672,8 @@ async def get_metrics(hours: int = Query(1, ge=1, le=24)):
             "success_rate": successful / total_runs if total_runs > 0 else 0,
             "avg_latency_seconds": avg_latency,
             "total_tokens": total_tokens,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "cost_estimate_usd": round(cost_estimate, 5),
+            "cost_estimate_usd": round(cost_estimate, 4),
             "cost_per_run_usd": round(cost_estimate / total_runs, 6) if total_runs > 0 else 0,
-            "carbon_footprint_grams": round(carbon_footprint_g, 2),
         }
     except Exception as e:
         logger.error(f"Metrics query failed: {e}")

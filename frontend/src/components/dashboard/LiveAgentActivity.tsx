@@ -316,10 +316,8 @@ export function LiveAgentActivity() {
 
       {/* Workflow Graph Modal */}
       {selectedRunForGraph && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="max-w-6xl w-full">
-            <WorkflowGraph runId={selectedRunForGraph} onClose={() => setSelectedRunForGraph(null)} />
-          </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-black/70 backdrop-blur-md">
+          <WorkflowGraph runId={selectedRunForGraph} onClose={() => setSelectedRunForGraph(null)} />
         </div>
       )}
     </div>

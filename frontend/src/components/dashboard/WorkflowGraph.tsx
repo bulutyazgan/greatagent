@@ -40,13 +40,29 @@ function CustomNode({ data }: any) {
   };
 
   return (
-    <div className={`px-4 py-3 rounded-lg border-2 ${getColorClass()} glass min-w-[180px]`}>
-      <div className="flex items-center gap-2 mb-1">
-        {getIcon()}
-        <div className="text-sm font-bold text-neutral-50">{data.label}</div>
+    <div className={`px-4 py-3 rounded-lg border-2 ${getColorClass()} glass min-w-[200px] max-w-[280px]`}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`p-1.5 rounded ${
+          data.type === 'agent' ? 'bg-blue-500/20' :
+          data.type === 'database' ? 'bg-cyan-500/20' :
+          data.type === 'llm' ? 'bg-purple-500/20' :
+          'bg-orange-500/20'
+        }`}>
+          {getIcon()}
+        </div>
+        <div className="text-sm font-bold text-neutral-50 line-clamp-2">{data.label}</div>
       </div>
-      <div className="text-xs text-neutral-400">
-        {data.latency_ms?.toFixed(0)}ms
+      <div className="space-y-1">
+        <div className="text-xs text-neutral-400 flex justify-between">
+          <span>Latency:</span>
+          <span className="font-mono text-neutral-300">{data.latency_ms?.toFixed(0) || '0'}ms</span>
+        </div>
+        {data.type === 'llm' && data.outputs?.token_usage && (
+          <div className="text-xs text-neutral-400 flex justify-between">
+            <span>Tokens:</span>
+            <span className="font-mono text-neutral-300">{data.outputs.token_usage.total_tokens || 0}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -76,48 +92,23 @@ export function WorkflowGraph({ runId, onClose }: WorkflowGraphProps) {
 
       const data = await response.json();
 
-      // Convert to React Flow format with better layout
-      const flowNodes: FlowNode[] = data.nodes.map((node: any, index: number) => {
-        // Root node at top center
-        if (index === 0) {
-          return {
-            id: node.id,
-            type: 'custom',
-            position: { x: 400, y: 50 },
-            data: {
-              label: node.label,
-              type: node.type,
-              status: node.status,
-              latency_ms: node.latency_ms,
-              inputs: node.inputs,
-              outputs: node.outputs,
-            },
-          };
-        }
-
-        // Arrange child nodes in a grid below
-        const childIndex = index - 1;
-        const columns = 3;
-        const col = childIndex % columns;
-        const row = Math.floor(childIndex / columns);
-
-        return {
-          id: node.id,
-          type: 'custom',
-          position: {
-            x: 100 + col * 300,
-            y: 200 + row * 150,
-          },
-          data: {
-            label: node.label,
-            type: node.type,
-            status: node.status,
-            latency_ms: node.latency_ms,
-            inputs: node.inputs,
-            outputs: node.outputs,
-          },
-        };
-      });
+      // Convert to React Flow format
+      const flowNodes: FlowNode[] = data.nodes.map((node: any, index: number) => ({
+        id: node.id,
+        type: 'custom',
+        position: {
+          x: index === 0 ? 300 : 100 + (index % 3) * 250,
+          y: index === 0 ? 50 : 150 + Math.floor((index - 1) / 3) * 120,
+        },
+        data: {
+          label: node.label,
+          type: node.type,
+          status: node.status,
+          latency_ms: node.latency_ms,
+          inputs: node.inputs,
+          outputs: node.outputs,
+        },
+      }));
 
       const flowEdges: FlowEdge[] = data.edges.map((edge: any) => ({
         id: edge.id,
@@ -143,46 +134,32 @@ export function WorkflowGraph({ runId, onClose }: WorkflowGraphProps) {
   };
 
   return (
-    <div className="glass rounded-xl border border-white/10 shadow-xl overflow-hidden">
-      <div className="p-4 border-b border-white/10 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-neutral-50 tracking-tight">
-          Workflow Execution Graph
-        </h3>
+    <div className="glass rounded-xl border border-white/10 shadow-xl overflow-hidden w-full max-w-6xl">
+      <div className="p-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-neutral-900/50 to-neutral-800/50">
+        <div>
+          <h3 className="text-lg font-bold text-neutral-50 tracking-tight">
+            Workflow Execution Graph
+          </h3>
+          <p className="text-xs text-neutral-400 mt-1">Run ID: {runId}</p>
+        </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="px-3 py-1 text-sm glass hover:bg-white/10 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm glass hover:bg-white/10 rounded-lg transition-colors font-medium"
           >
             Close
           </button>
         )}
       </div>
 
-      <div className="h-[600px] bg-neutral-900">
+      <div className="h-[700px] bg-neutral-900">
         {loading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            <div className="text-neutral-400 text-sm">Loading workflow graph...</div>
+          <div className="flex items-center justify-center h-full">
+            <div className="text-neutral-500">Loading workflow graph...</div>
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <div className="text-red-400 text-lg">⚠ Error Loading Graph</div>
-            <div className="text-neutral-500 text-sm">{error}</div>
-            <button
-              onClick={() => {
-                setLoading(true);
-                setError(null);
-                fetchWorkflowGraph();
-              }}
-              className="px-4 py-2 glass hover:bg-white/10 rounded-lg transition-colors text-sm"
-            >
-              Retry
-            </button>
-          </div>
-        ) : nodes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <div className="text-neutral-400">No workflow data available</div>
-            <div className="text-neutral-600 text-sm">This run may not have completed yet</div>
+          <div className="flex items-center justify-center h-full">
+            <div className="text-red-400">Error: {error}</div>
           </div>
         ) : (
           <ReactFlow
