@@ -1,63 +1,9 @@
 
 # Beacon / Beaconn — Emergency Response Coordination System
 
-Beacon (beaconn) is an AI-powered emergency response coordination platform developed during the Great Agent Hack at UCL. It combines LangGraph-style agent orchestration, LangChain tooling, and modern web technologies to coordinate helpers and people in need during large-scale disasters.
+Beacon (beaconn) is an AI-powered emergency response coordination platform developed during the Great Agent Hack at UCL. It combines LangGraph-style agent orchestration, LangChain tooling, and modern backend + frontend components to prototype rapid, localised assistance matching between callers and volunteer helpers.
 
-This README provides a current, high-level summary of the repository, how to get started, and where to find detailed implementation and integration documentation contained in the repo.
-
-Status
-- Active prototype with agent orchestration, backend APIs, and a React frontend.
-- Rich documentation present in the repo (implementation notes, LangSmith examples, integration plans, quickstarts).
-- Integrations & telemetry: LangSmith integrations and Bedrock/LLM multi-model support are documented and used by the system.
-
-Repository layout (high level)
-- README.md — (this file)
-- QUICKSTART.md — concise setup and run instructions
-- FRONTEND_BACKEND_INTEGRATION_PLAN.md — detailed frontend/backend contract and integration notes
-- IMPLEMENTATION_SUMMARY.md — in-depth design and implementation details
-- LANGSMITH_*.md — LangSmith integration notes, quickstart and examples
-- TRACK_A_IMPLEMENTATION_CHECKLIST.md — large checklist / roadmap for Track A / demo readiness
-- backend/ — Python backend (agents, API, database helpers)
-  - database/ — DB schema, docker-compose for Postgres + PostGIS, example SQL
-  - agent_graph.py, agent_state.py, agent_tools.py, main.py, etc.
-- frontend/ — React + TypeScript frontend
-- tutorials/ — examples and tutorial material
-- beaconn-Photoroom.png — project image / logo
-
-Key capabilities (up to date)
-- Agent-based coordination
-  - LangGraph-style orchestration of multiple specialized agents implemented in the backend.
-  - Modular agents for coordination, matching, database access, and communications.
-- Multi-model LLM support
-  - Designed to support AWS Bedrock and multiple LLMs (Claude family, Llama, Mistral, etc.).
-  - LangSmith integration for logging, evaluation, and traceability (see LANGSMITH_INTEGRATION.md and LANGSMITH_CODE_EXAMPLES.md).
-- Spatial matching & database
-  - PostgreSQL + PostGIS for location storage and proximity queries (helper-search, nearest resources).
-  - Database schema and example data in backend/database (init.sql and docker-compose).
-- Real-time/near-real-time assignment logic
-  - Matching Agent pairs helpers and cases based on skills, availability, and proximity.
-  - Assignment tracking, case lifecycle transitions (open → in_progress → resolved → closed).
-- Audit trail & telemetry
-  - Actions and agent decisions are logged for auditing, with integrations to LangSmith for richer traces.
-- Frontend
-  - React + TypeScript UI that interacts with the backend APIs (see FRONTEND_BACKEND_INTEGRATION_PLAN.md for endpoints and data contracts).
-- Developer-focused documentation
-  - Multiple design & implementation docs to help contributors onboard quickly:
-    - IMPLEMENTATION_SUMMARY.md
-    - QUICKSTART.md
-    - LANGSMITH_QUICKSTART.md
-    - FRONTEND_BACKEND_INTEGRATION_PLAN.md
-
-Notable design elements
-- 3-layer emergency model:
-  - Emergencies: top-level events covering geographic areas (e.g., city wildfires).
-  - Case Groups: logical clusters within an emergency (e.g., buildings, evacuation routes).
-  - Cases: individual help requests.
-- Helpers and callers:
-  - Helpers have skill tags, maximum travel ranges, and location data (PostGIS POINT).
-  - Callers can submit anonymous help requests; privacy-preserving options are considered.
-- Extensible toolset:
-  - Agent tools are modular and designed to be extended for new notification channels, external APIs, or alternate LLM providers.
+This README is an updated, practical entrypoint: project overview, required files (including references to .env.example), setup instructions, how to run, and how to run basic tests.
 
 Quick links (in-repo docs)
 - QUICKSTART.md — quick setup & run instructions
@@ -67,57 +13,150 @@ Quick links (in-repo docs)
 - LANGSMITH_CODE_EXAMPLES.md — code examples for LangSmith usage
 - TRACK_A_IMPLEMENTATION_CHECKLIST.md — demo and release checklist
 
-Getting started (short)
-1. Clone repository
+Project overview
+- Purpose: enable quick matching of help requests ("cases") to nearby volunteers ("helpers") with LLM-based guidance and audit trails.
+- Architecture:
+  - backend/ — FastAPI + service layer, agent orchestration, DB helpers
+  - frontend/ — React + TypeScript UI (dev server + production build)
+  - backend/database/ — Postgres + PostGIS docker-compose and SQL init scripts
+  - agents use multi-model LLM support (Bedrock / other providers) and LangSmith for telemetry (optional)
+- Key capabilities: agent orchestration, spatial matching (PostGIS), assignment lifecycle, caller/helper guidance generation, telemetry.
+
+Important env example files (please configure before running)
+- backend/.env.example — located at backend/.env.example
+  - Copy to backend/.env and edit before starting backend:
+    - cp backend/.env.example backend/.env
+  - Typical variables included or expected:
+    - TEAM_ID=
+    - API_TOKEN=
+    - DATABASE_URL=postgresql://beacon_user:beacon_local_dev@localhost:5432/beacon
+    - LANGSMITH_API_KEY=
+    - BEDROCK_API_KEY=
+    - PROVIDER_... (other provider-specific vars)
+- frontend/.env.example — located at frontend/.env.example
+  - Copy to frontend/.env and edit before starting frontend:
+    - cp frontend/.env.example frontend/.env
+  - Typical variables:
+    - VITE_API_BASE_URL=http://localhost:8000/api
+    - VITE_MAP_API_KEY= (if using map/routing services)
+
+Requirements
+- Docker & docker-compose (for running Postgres + PostGIS)
+- Python 3.10+ (or as specified by backend/requirements.txt)
+- Node.js 16+ / npm or yarn for frontend
+- Optional: account/keys for Bedrock / LangSmith / other LLM providers
+
+Setup (development)
+1. Clone repo
    - git clone https://github.com/bulutyazgan/beaconn.git
-2. Database
+   - cd beaconn
+
+2. Database (Postgres + PostGIS)
    - cd backend/database
    - docker-compose up -d
-   - This brings up PostgreSQL with PostGIS; sample schema and seed data are available in init.sql.
-3. Backend
-   - cd ../.. # to repo root or backend
-   - Create a .env in backend/ (see QUICKSTART.md and LANGSMITH_QUICKSTART.md). Typical variables:
-     - TEAM_ID=
-     - API_TOKEN= (if using any external APIs)
-     - DATABASE_URL=postgresql://beacon_user:beacon_local_dev@localhost:5432/beacon
-     - LANGSMITH_API_KEY= (optional, for telemetry)
-     - BEDROCK_API_KEY / PROVIDER_... (if using Bedrock)
-   - Install Python deps: pip install -r requirements.txt
-   - Run agent system or API entry point (see backend/README or QUICKSTART):
-     - python main.py
-     - or python agent_graph.py
-4. Frontend
-   - cd frontend
-   - npm install
-   - npm run dev
-   - Default dev server: http://localhost:5173 (see FRONTEND_BACKEND_INTEGRATION_PLAN.md for API base URL)
-5. Tests & tooling
-   - Many docs include code snippets and test scaffolding; consult QUICKSTART.md and LANGSMITH_* files for running examples and telemetry.
+   - Initialize DB schema & seed data:
+     - psql -h localhost -U beacon_user -d beacon -f init.sql
+   - Apply guides migration (if present):
+     - psql -h localhost -U beacon_user -d beacon -f migrations/001_add_guides_tables.sql
 
-Configuration & environment
-- Sensitive keys and credentials should always be set in environment variables or a secrets manager; the repo includes guidance in LANGSMITH_QUICKSTART.md and QUICKSTART.md.
-- When using Bedrock or other hosted LLM providers, verify quotas and credentials before running large experiments.
+3. Backend environment
+   - Copy example env and edit:
+     - cp backend/.env.example backend/.env
+     - Edit backend/.env to set DATABASE_URL and any provider keys (LANGSMITH_API_KEY, BEDROCK_API_KEY, TEAM_ID, etc.)
+   - Install Python dependencies:
+     - cd backend
+     - python -m venv .venv && source .venv/bin/activate
+     - pip install -r requirements.txt
+   - Start backend (dev):
+     - # Option A: run via uvicorn (recommended for FastAPI)
+       - uvicorn app:app --reload --host 0.0.0.0 --port 8000
+     - # Option B: legacy entrypoints
+       - python main.py
+       - or python agent_graph.py (for agent-only runs)
+   - API will be available at: http://localhost:8000
+   - Open docs: http://localhost:8000/docs
 
-Where to look next
-- IMPLEMENTATION_SUMMARY.md — read this for deep-dive implementation and rationale.
-- FRONTEND_BACKEND_INTEGRATION_PLAN.md — use this while wiring frontend to backend endpoints.
-- LANGSMITH_INTEGRATION.md and LANGSMITH_CODE_EXAMPLES.md — how telemetry and traces are captured for agent runs.
-- TRACK_A_IMPLEMENTATION_CHECKLIST.md — roadmap for turning the prototype into a demo-ready system.
+4. Frontend environment
+   - Copy example env and edit:
+     - cp frontend/.env.example frontend/.env
+     - Edit VITE_API_BASE_URL and any map/API keys
+   - Install and run:
+     - cd frontend
+     - npm install
+     - npm run dev
+   - Default dev server: http://localhost:5173
+
+How to run (end-to-end dev)
+1. Ensure Postgres container is up and DB initialized (see Database step).
+2. Start backend as above.
+3. Start frontend as above.
+4. Use the frontend to create users/cases or exercise APIs directly with curl/Postman.
+
+Basic API smoke tests (curl examples)
+- Create user with location (caller)
+  curl -X POST http://localhost:8000/api/users/location-consent \
+    -H "Content-Type: application/json" \
+    -d '{"latitude":37.7749,"longitude":-122.4194,"name":"Test User","is_helper":false}'
+
+- Create case (caller)
+  curl -X POST http://localhost:8000/api/cases \
+    -H "Content-Type: application/json" \
+    -d '{"user_id":"<USER_ID>","latitude":37.7749,"longitude":-122.4194,"raw_problem_description":"Trapped in collapsed building"}'
+
+- Find nearby cases (helper)
+  curl "http://localhost:8000/api/cases/nearby?lat=37.7750&lon=-122.4195&radius=10"
+
+- Claim assignment (helper)
+  curl -X POST http://localhost:8000/api/assignments \
+    -H "Content-Type: application/json" \
+    -d '{"case_id":1,"helper_user_id":456}'
+
+Notes about agent processing & guides
+- Case creation triggers background agent processing (fire-and-forget in current prototype). Guides (caller/helper) may take a few seconds to appear. Poll endpoints:
+  - GET /api/cases/{case_id}/caller-guide
+  - GET /api/assignments/{id}/helper-guide
+
+Running automated (or manual) tests
+- There is no central test suite included in the repo root; check backend/tests or frontend/tests if present.
+- Manual end-to-end testing can be done with the curl examples above after starting backend and frontend.
+- To run any Python tests (if shipped):
+  - cd backend
+  - pytest -q
+- To run any frontend tests (if shipped):
+  - cd frontend
+  - npm test
+
+Configuration & secrets
+- Never commit real secrets. Use .env and/or a secrets manager.
+- When running LLMs (Bedrock, Anthropic, etc.) check quotas and costs before experiments.
+- LANGSMITH_API_KEY is optional but recommended for traceability during development.
+
+Troubleshooting / common issues
+- DB connection errors:
+  - Confirm DATABASE_URL in backend/.env points to running Postgres container and credentials match docker-compose.
+- Agent errors:
+  - Check backend logs; some agent pipelines use external LLMs and will fail if keys are missing.
+- Frontend CORS:
+  - Ensure backend allows the frontend origin or run both on localhost with default ports.
+
+Where to look next (developer docs)
+- IMPLEMENTATION_SUMMARY.md — detailed backend & agent notes
+- FRONTEND_BACKEND_INTEGRATION_PLAN.md — endpoint contracts and expected payloads
+- LANGSMITH_QUICKSTART.md & LANGSMITH_CODE_EXAMPLES.md — telemetry integration notes
+- QUICKSTART.md — condensed runnable quickstart that mirrors these steps
 
 Contributing
-- The repository contains many design notes and a checklist for Track A. If you want to contribute:
-  - Open an issue to propose changes or request a task.
-  - Follow the documented integration plans and implementation summary when adding features or modifying agent behavior.
-  - Consider preserving or extending LangSmith traces for any agent changes.
+- Open an issue to propose changes or request a task.
+- Follow the documented integration plans and implementation summary when adding features or modifying agent behavior.
+- Preserve or extend LangSmith traces for any agent changes.
 
 License & attribution
-- Built for the Great Agent Hack at UCL. See repo headers and individual files for any license notes or contributor attributions.
+- Built for the Great Agent Hack at UCL. See repo headers and individual files for license notes or contributor attributions.
 
 Contact / Authors
 - See commit history and contributors on GitHub for author details and contact.
 
-If you want, I can:
-- Produce a more compact README focused only on setup scripts.
-- Open a PR that replaces the current README.md with this updated content.
-- Extract and merge key snippets from IMPLEMENTATION_SUMMARY.md and QUICKSTART.md into this file for an even more comprehensive single-file doc.
-
+If you'd like, I can:
+- Open a PR that replaces the repository README.md with this updated README and include .env.example checks in CI.
+- Produce a very short README focused only on quickstart scripts.
+- Extract and merge key snippets from IMPLEMENTATION_SUMMARY.md and QUICKSTART.md into a single comprehensive quickstart.
