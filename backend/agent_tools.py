@@ -3,11 +3,13 @@
 import ast
 import json
 import os
+import functools
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 from math import radians, sin, cos, asin, sqrt
 
 import requests
+import httpx
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -317,8 +319,26 @@ def _invoke_valyu(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @tool("valyu_deepsearch", args_schema=ValyuSearchInput)
-def valyu_deepsearch(**tool_kwargs: Any) -> str:
+@functools.lru_cache(maxsize=100)
+def valyu_deepsearch(query: str, max_num_results: int = 5, search_type: str = "all", response_length: str = "short", max_price: float = None, relevance_threshold: float = None, fast_mode: bool = False, included_sources: tuple = None, excluded_sources: tuple = None, category: str = None, start_date: str = None, end_date: str = None, country_code: str = None, is_tool_call: bool = True) -> str:
     """Search the public web, research papers, and premium Valyu datasets for up-to-date context."""
+
+    tool_kwargs = {
+        "query": query,
+        "max_num_results": max_num_results,
+        "search_type": search_type,
+        "response_length": response_length,
+        "max_price": max_price,
+        "relevance_threshold": relevance_threshold,
+        "fast_mode": fast_mode,
+        "included_sources": included_sources,
+        "excluded_sources": excluded_sources,
+        "category": category,
+        "start_date": start_date,
+        "end_date": end_date,
+        "country_code": country_code,
+        "is_tool_call": is_tool_call,
+    }
 
     params = ValyuSearchInput(**tool_kwargs)
     payload: Dict[str, Any] = {"query": params.query}
@@ -359,12 +379,87 @@ def valyu_deepsearch(**tool_kwargs: Any) -> str:
     return json.dumps(_format_valyu_results(data))
 
 
+async def _ainvoke_valyu(payload: Dict[str, Any]) -> Dict[str, Any]:
+    api_key = _require_valyu_api_key()
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{VALYU_BASE_URL.rstrip('/')}/deepsearch",
+            headers={"x-api-key": api_key, "Content-Type": "application/json"},
+            json=payload,
+            timeout=VALYU_TIMEOUT,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+@tool("async_valyu_deepsearch", args_schema=ValyuSearchInput)
+@functools.lru_cache(maxsize=100)
+async def async_valyu_deepsearch(query: str, max_num_results: int = 5, search_type: str = "all", response_length: str = "short", max_price: float = None, relevance_threshold: float = None, fast_mode: bool = False, included_sources: tuple = None, excluded_sources: tuple = None, category: str = None, start_date: str = None, end_date: str = None, country_code: str = None, is_tool_call: bool = True) -> str:
+    """(Async) Search the public web, research papers, and premium Valyu datasets for up-to-date context."""
+
+    tool_kwargs = {
+        "query": query,
+        "max_num_results": max_num_results,
+        "search_type": search_type,
+        "response_length": response_length,
+        "max_price": max_price,
+        "relevance_threshold": relevance_threshold,
+        "fast_mode": fast_mode,
+        "included_sources": included_sources,
+        "excluded_sources": excluded_sources,
+        "category": category,
+        "start_date": start_date,
+        "end_date": end_date,
+        "country_code": country_code,
+        "is_tool_call": is_tool_call,
+    }
+
+    params = ValyuSearchInput(**tool_kwargs)
+    payload: Dict[str, Any] = {"query": params.query}
+
+    optional_fields = {
+        "max_num_results": params.max_num_results,
+        "search_type": params.search_type,
+        "response_length": params.response_length,
+        "max_price": params.max_price,
+        "relevance_threshold": params.relevance_threshold,
+        "fast_mode": params.fast_mode,
+        "included_sources": params.included_sources,
+        "excluded_sources": params.excluded_sources,
+        "category": params.category,
+        "start_date": params.start_date,
+        "end_date": params.end_date,
+        "country_code": params.country_code,
+        "is_tool_call": params.is_tool_call,
+    }
+
+    for key, value in optional_fields.items():
+        if value is not None:
+            payload[key] = value
+
+    try:
+        data = await _ainvoke_valyu(payload)
+    except httpx.HTTPError as exc:
+        error_payload = {
+            "success": False,
+            "error": f"HTTP {exc.response.status_code}: {exc.response.text}",
+        }
+        return json.dumps(error_payload)
+    except httpx.RequestError as exc:
+        return json.dumps({"success": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return json.dumps({"success": False, "error": str(exc)})
+
+    return json.dumps(_format_valyu_results(data))
+
+
 # --- All Tools List ---
 # Unified list of all available tools for agents
 AVAILABLE_TOOLS = [
     extract_case_from_text,
     process_case_grouping,
-    valyu_deepsearch
+    valyu_deepsearch,
+    async_valyu_deepsearch,
 ]
 
 # Legacy alias for backward compatibility

@@ -1,5 +1,7 @@
 import os
 import requests
+import httpx
+import asyncio
 from dotenv import load_dotenv
 
 # --- 1. Load Environment Variables ---
@@ -28,9 +30,9 @@ MODELS = {
 }
 
 # --- 3. Reusable API Client ---
-def get_api_session() -> requests.Session:
+def get_api_session() -> httpx.AsyncClient:
     """
-    Creates and returns a requests.Session object with
+    Creates and returns a httpx.AsyncClient object with
     your team's authentication headers pre-configured.
     """
     
@@ -41,7 +43,7 @@ def get_api_session() -> requests.Session:
             "Please check your .env file."
         )
 
-    session = requests.Session()
+    session = httpx.AsyncClient()
     session.headers.update({
         "Content-Type": "application/json",
         "X-Team-ID": TEAM_ID,
@@ -52,7 +54,7 @@ def get_api_session() -> requests.Session:
 # --- 4. Main execution (for testing) ---
 # This block only runs when you execute `python3 main.py`
 # It's a great way to test that your credentials are set up correctly.
-if __name__ == "__main__":
+async def main():
     print("Attempting to create API session...")
     
     try:
@@ -75,7 +77,7 @@ if __name__ == "__main__":
 
         # 3. Send the test request
         print("Sending test request to API...")
-        response = api_client.post(API_ENDPOINT, json=test_data)
+        response = await api_client.post(API_ENDPOINT, json=test_data)
         
         # Check for HTTP errors
         response.raise_for_status()
@@ -94,10 +96,16 @@ if __name__ == "__main__":
 
     except ValueError as e:
         print(f"\n❌ SETUP ERROR: {e}")
-    except requests.exceptions.HTTPError as e:
+    except httpx.HTTPStatusError as e:
         # --- THIS IS THE FIX ---
         # The error object 'e' *is* the error, it doesn't have an '.Error' attribute
         print(f"\n❌ HTTP ERROR: {e}") 
         print(f"   Response body: {e.response.text}")
     except Exception as e:
         print(f"\n❌ An unexpected error occurred: {e}")
+    finally:
+        if 'api_client' in locals():
+            await api_client.aclose()
+
+if __name__ == "__main__":
+    asyncio.run(main())

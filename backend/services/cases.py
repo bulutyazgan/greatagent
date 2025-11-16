@@ -105,8 +105,9 @@ def create_case(
         # Use threading for now (will replace with Celery/RQ later)
         def process_case_async():
             try:
+                import asyncio
                 from services.research import run_input_processing_agent
-                run_input_processing_agent(case_id)
+                asyncio.run(run_input_processing_agent(case_id))
             except Exception as e:
                 print(f"Error in async processing for case {case_id}: {e}")
                 # Log error to updates table
@@ -354,3 +355,15 @@ def update_case_status(
             "status": row['status'],
             "resolved_at": row['resolved_at'].isoformat() if row['resolved_at'] else None
         }
+
+async def async_get_nearby_cases(
+    latitude: float,
+    longitude: float,
+    radius_km: float = 10.0,
+    status_filter: Optional[List[str]] = None
+) -> List[Dict]:
+    """
+    Asynchronously get cases near a location.
+    """
+    import asyncio
+    return await asyncio.to_thread(get_nearby_cases, latitude, longitude, radius_km, status_filter)
