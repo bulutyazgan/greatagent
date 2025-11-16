@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { HelpRequest } from '@/types';
 
 interface VictimMarkersProps {
@@ -7,87 +7,243 @@ interface VictimMarkersProps {
   onMarkerClick?: (request: HelpRequest) => void;
 }
 
-// Color coding based on urgency
-const getMarkerColor = (urgency: string): string => {
+// Color coding based on urgency - DARK RED for critical, ORANGE for high, BRIGHT YELLOW for medium/low
+const getCircleColors = (urgency: string) => {
   switch (urgency) {
     case 'critical':
-      return '#ef4444'; // Red
+      return {
+        strokeColor: '#5A1810',  // MUCH DARKER red-brown (nearly black-red)
+        fillColor: '#8B2420',    // Dark red
+        strokeOpacity: 1.0,
+        fillOpacity: 0.55,       // More opaque for visibility
+      };
     case 'high':
-      return '#f59e0b'; // Orange
+      return {
+        strokeColor: '#A25C41',  // alert-dark (darker orange)
+        fillColor: '#D97A4A',    // Bright orange-terracotta
+        strokeOpacity: 0.95,
+        fillOpacity: 0.5,
+      };
     case 'medium':
-      return '#eab308'; // Yellow
+      return {
+        strokeColor: '#D4A840',  // BRIGHTER golden
+        fillColor: '#FFD15C',    // BRIGHT golden yellow
+        strokeOpacity: 0.9,
+        fillOpacity: 0.45,
+      };
     case 'low':
-      return '#10b981'; // Green
+      return {
+        strokeColor: '#E0B84A',  // BRIGHTER yellow
+        fillColor: '#FFED4E',    // VERY BRIGHT yellow
+        strokeOpacity: 0.85,
+        fillOpacity: 0.4,
+      };
     default:
-      return '#6b7280'; // Gray
+      return {
+        strokeColor: '#6E5F4E',  // neutral-600
+        fillColor: '#8A7866',    // neutral-500
+        strokeOpacity: 0.7,
+        fillOpacity: 0.35,
+      };
   }
 };
 
-// Helper function to add periodic bounce animation to critical markers
-const addPeriodicBounce = (marker: any) => {
-  const bounce = () => {
-    marker.setAnimation(window.google.maps.Animation.BOUNCE);
-    // Stop bouncing after 1 second (3 bounces)
-    setTimeout(() => {
-      marker.setAnimation(null);
-    }, 1000);
+// Get radius based on urgency and people count - LARGER and more distinct
+const getCircleRadius = (urgency: string, peopleCount: number): number => {
+  const baseRadius = Math.max(50, Math.min(peopleCount * 15, 120)); // 50-120m base (increased)
+
+  const urgencyMultiplier = {
+    'critical': 1.8,  // Much larger for critical
+    'high': 1.5,      // Larger for high
+    'medium': 1.2,    // Slightly larger
+    'low': 1.0,
+  }[urgency] || 1.0;
+
+  return baseRadius * urgencyMultiplier;
+};
+
+// Helper function to add pulsing animation to critical circles
+const addPulsingAnimation = (circle: any, colors: any) => {
+  let growing = true;
+  let currentOpacity = colors.fillOpacity;
+
+  const pulse = () => {
+    if (growing) {
+      currentOpacity += 0.05;
+      if (currentOpacity >= colors.fillOpacity + 0.2) {
+        growing = false;
+      }
+    } else {
+      currentOpacity -= 0.05;
+      if (currentOpacity <= colors.fillOpacity - 0.1) {
+        growing = true;
+      }
+    }
+    circle.setOptions({ fillOpacity: currentOpacity });
   };
 
-  // Bounce immediately
-  bounce();
-
-  // Then bounce every 5 seconds
-  const interval = setInterval(bounce, 5000);
-
-  // Return cleanup function
+  const interval = setInterval(pulse, 100);
   return () => clearInterval(interval);
 };
 
 export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarkersProps) {
+  const circlesRef = useRef<any[]>([]);
+  const markersRef = useRef<any[]>([]);
+  const infoWindowsRef = useRef<any[]>([]);
+  const cleanupFunctionsRef = useRef<(() => void)[]>([]);
+
   useEffect(() => {
     if (!map || !window.google) return;
 
-    // Store markers, info windows, and animation cleanup functions
-    const markers: any[] = [];
-    const infoWindows: any[] = [];
-    const cleanupFunctions: (() => void)[] = [];
+    // Clear existing circles, markers, info windows, and animations
+    circlesRef.current.forEach(circle => circle.setMap(null));
+    markersRef.current.forEach(marker => marker.setMap(null));
+    infoWindowsRef.current.forEach(infoWindow => infoWindow.close());
+    cleanupFunctionsRef.current.forEach(cleanup => cleanup());
 
-    // Add a marker for each help request
+    circlesRef.current = [];
+    markersRef.current = [];
+    infoWindowsRef.current = [];
+    cleanupFunctionsRef.current = [];
+
+    // Add a circle for each help request
     helpRequests.forEach((request) => {
-      const marker = new window.google.maps.Marker({
-        position: request.location,
+      const colors = getCircleColors(request.urgency);
+      const radius = getCircleRadius(request.urgency, request.peopleCount);
+
+      const circle = new window.google.maps.Circle({
+        center: request.location,
+        radius: radius,
+        fillColor: colors.fillColor,
+        fillOpacity: colors.fillOpacity,
+        strokeWeight: 0,  // NO BORDER
         map: map,
-        title: `${request.userName} - ${request.type}`,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: getMarkerColor(request.urgency),
-          fillOpacity: 0.9,
-          strokeColor: '#ffffff',
-          strokeWeight: 2,
-          scale: request.urgency === 'critical' ? 12 : 8,
-        },
-        // No constant animation - we'll add periodic bounce for critical markers
-        animation: undefined,
+        clickable: false,  // Only pins are interactive
+        zIndex: 2,  // Above polygons
       });
 
-      // Add periodic bounce animation for critical urgency markers
-      if (request.urgency === 'critical') {
-        const cleanup = addPeriodicBounce(marker);
-        cleanupFunctions.push(cleanup);
+      // Create custom image marker using OverlayView for HTML content
+      class CustomVictimMarker extends window.google.maps.OverlayView {
+        position: any;
+        containerDiv: HTMLDivElement | null = null;
+        borderColor: string;
+        onHoverEnter: () => void;
+        onHoverLeave: () => void;
+        onClick: () => void;
+
+        constructor(
+          position: any,
+          borderColor: string,
+          onHoverEnter: () => void,
+          onHoverLeave: () => void,
+          onClick: () => void
+        ) {
+          super();
+          this.position = position;
+          this.borderColor = borderColor;
+          this.onHoverEnter = onHoverEnter;
+          this.onHoverLeave = onHoverLeave;
+          this.onClick = onClick;
+        }
+
+        onAdd() {
+          const div = document.createElement('div');
+          div.style.position = 'absolute';
+          div.style.cursor = 'pointer';
+
+          div.innerHTML = `
+            <div style="
+              width: 40px;
+              height: 40px;
+              border-radius: 50%;
+              border: 3px solid ${this.borderColor};
+              overflow: hidden;
+              box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+              background: white;
+              padding: 2px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            ">
+              <img src="/assets/sad.png" style="width: 100%; height: 100%; object-fit: contain;" />
+            </div>
+          `;
+
+          // Add event listeners
+          div.addEventListener('mouseenter', this.onHoverEnter);
+          div.addEventListener('mouseleave', this.onHoverLeave);
+          div.addEventListener('click', this.onClick);
+
+          this.containerDiv = div;
+          const panes = this.getPanes();
+          panes!.overlayImage.appendChild(div);
+        }
+
+        draw() {
+          const overlayProjection = this.getProjection();
+          const position = overlayProjection.fromLatLngToDivPixel(
+            new window.google.maps.LatLng(this.position.lat, this.position.lng)
+          );
+
+          if (this.containerDiv) {
+            this.containerDiv.style.left = (position.x - 20) + 'px';  // Center horizontally (40px / 2)
+            this.containerDiv.style.top = (position.y - 20) + 'px';   // Center vertically (40px / 2)
+          }
+        }
+
+        onRemove() {
+          if (this.containerDiv) {
+            this.containerDiv.removeEventListener('mouseenter', this.onHoverEnter);
+            this.containerDiv.removeEventListener('mouseleave', this.onHoverLeave);
+            this.containerDiv.removeEventListener('click', this.onClick);
+            this.containerDiv.parentNode?.removeChild(this.containerDiv);
+            this.containerDiv = null;
+          }
+        }
       }
 
-      // Create info window with detailed information - modern glassmorphic design
-      const urgencyColor = getMarkerColor(request.urgency);
+      const customMarker = new CustomVictimMarker(
+        request.location,
+        colors.strokeColor,
+        () => {
+          circle.setOptions({
+            fillOpacity: colors.fillOpacity + 0.2,
+          });
+          infoWindow.setPosition(request.location);
+          infoWindow.open(map);
+        },
+        () => {
+          circle.setOptions({
+            fillOpacity: colors.fillOpacity,
+          });
+          infoWindow.close();
+        },
+        () => {
+          if (onMarkerClick) {
+            onMarkerClick(request);
+          }
+        }
+      );
+      customMarker.setMap(map);
+
+      // Add pulsing animation for critical urgency
+      if (request.urgency === 'critical') {
+        const cleanup = addPulsingAnimation(circle, colors);
+        cleanupFunctionsRef.current.push(cleanup);
+      }
+
+      // Create info window with detailed information
+      const urgencyColor = colors.strokeColor;
       const infoContent = `
         <div style="
-          background: linear-gradient(135deg, rgba(30, 30, 40, 0.95) 0%, rgba(20, 20, 30, 0.98) 100%);
+          background: linear-gradient(135deg, rgba(42, 32, 25, 0.95) 0%, rgba(61, 49, 40, 0.98) 100%);
           backdrop-filter: blur(20px);
           border-radius: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(196, 181, 163, 0.2);
           padding: 0;
           min-width: 280px;
           max-width: 320px;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(196, 181, 163, 0.1);
           overflow: hidden;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         ">
@@ -111,7 +267,7 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
             <div style="
               font-weight: 700;
               font-size: 15px;
-              color: #ffffff;
+              color: #F5F1EB;
               margin-bottom: 4px;
               text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
             ">
@@ -139,7 +295,7 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
               <div style="flex: 1;">
                 <div style="
                   font-size: 11px;
-                  color: #9ca3af;
+                  color: #A69583;
                   font-weight: 600;
                   text-transform: uppercase;
                   letter-spacing: 0.5px;
@@ -147,7 +303,7 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
                 ">Name</div>
                 <div style="
                   font-size: 14px;
-                  color: #ffffff;
+                  color: #F5F1EB;
                   font-weight: 600;
                 ">${request.userName}</div>
               </div>
@@ -160,7 +316,7 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
               ">
                 <div style="
                   font-size: 11px;
-                  color: #9ca3af;
+                  color: #A69583;
                   font-weight: 600;
                   text-transform: uppercase;
                   letter-spacing: 0.5px;
@@ -176,21 +332,21 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
 
             ${request.claimedBy ? `
               <div style="
-                background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.1) 100%);
-                border: 1px solid rgba(16, 185, 129, 0.3);
+                background: linear-gradient(135deg, rgba(139, 155, 122, 0.2) 0%, rgba(139, 155, 122, 0.1) 100%);
+                border: 1px solid rgba(139, 155, 122, 0.3);
                 border-radius: 8px;
                 padding: 8px 12px;
                 margin-bottom: 12px;
               ">
                 <div style="
                   font-size: 11px;
-                  color: #6ee7b7;
+                  color: #A8B599;
                   font-weight: 600;
                   margin-bottom: 2px;
                 ">✓ Claimed by</div>
                 <div style="
                   font-size: 13px;
-                  color: #10b981;
+                  color: #8B9B7A;
                   font-weight: 600;
                 ">${request.claimedBy}</div>
               </div>
@@ -198,15 +354,15 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
 
             <!-- Description -->
             <div style="
-              background: rgba(255, 255, 255, 0.03);
-              border: 1px solid rgba(255, 255, 255, 0.05);
+              background: rgba(196, 181, 163, 0.05);
+              border: 1px solid rgba(196, 181, 163, 0.1);
               border-radius: 8px;
               padding: 10px 12px;
               margin-bottom: 12px;
             ">
               <div style="
                 font-size: 13px;
-                color: #d1d5db;
+                color: #D9CFC0;
                 line-height: 1.5;
               ">${request.description}</div>
             </div>
@@ -214,7 +370,7 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
             <!-- Timestamp -->
             <div style="
               font-size: 11px;
-              color: #6b7280;
+              color: #8A7866;
               font-weight: 500;
               display: flex;
               align-items: center;
@@ -230,36 +386,22 @@ export function VictimMarkers({ map, helpRequests, onMarkerClick }: VictimMarker
       const infoWindow = new window.google.maps.InfoWindow({
         content: infoContent,
         disableAutoPan: true,
+        pixelOffset: new window.google.maps.Size(0, -50),  // 50 pixels above marker
       });
 
-      // Show info window on hover
-      marker.addListener('mouseover', () => {
-        infoWindow.open(map, marker);
-      });
-
-      // Hide info window when mouse leaves
-      marker.addListener('mouseout', () => {
-        infoWindow.close();
-      });
-
-      // Add click listener
-      marker.addListener('click', () => {
-        if (onMarkerClick) {
-          onMarkerClick(request);
-        }
-      });
-
-      markers.push(marker);
-      infoWindows.push(infoWindow);
+      circlesRef.current.push(circle);
+      markersRef.current.push(customMarker);
+      infoWindowsRef.current.push(infoWindow);
     });
 
-    // Cleanup function to remove markers, info windows, and animation intervals when component unmounts or dependencies change
+    // Cleanup function
     return () => {
-      markers.forEach((marker) => marker.setMap(null));
-      infoWindows.forEach((infoWindow) => infoWindow.close());
-      cleanupFunctions.forEach((cleanup) => cleanup());
+      circlesRef.current.forEach(circle => circle.setMap(null));
+      markersRef.current.forEach(marker => marker.setMap(null));
+      infoWindowsRef.current.forEach(infoWindow => infoWindow.close());
+      cleanupFunctionsRef.current.forEach(cleanup => cleanup());
     };
   }, [map, helpRequests, onMarkerClick]);
 
-  return null; // This component doesn't render anything in React
+  return null; // This component renders directly to the map
 }

@@ -6,6 +6,7 @@ import { useDisasterSelection } from '@/hooks/useDisasterSelection';
 import { useUserIdentity } from '@/hooks/useUserIdentity';
 import { RoleSelection } from '@/components/role/RoleSelection';
 import { Dashboard } from '@/components/layout/Dashboard';
+import { RequestHelpDialog } from '@/components/layout/RequestHelpDialog';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
@@ -16,8 +17,27 @@ function App() {
   const { registerUser, clearIdentity, isLoading: isRegisteringUser } = useUserIdentity();
 
   const [isRegistering, setIsRegistering] = useState(false);
+  const [showInitialHelpDialog, setShowInitialHelpDialog] = useState(false);
+  const [pendingRole, setPendingRole] = useState<UserRole | null>(null);
 
   const handleRoleSelect = async (selectedRole: UserRole) => {
+    // If victim is selected, register user FIRST, then show dialog
+    if (selectedRole === 'victim') {
+      setPendingRole(selectedRole);
+
+      // Register the user first so we have a user_id
+      await completeRegistration(selectedRole);
+
+      // Then show the help dialog
+      setShowInitialHelpDialog(true);
+      return;
+    }
+
+    // For responders, proceed with normal registration
+    await completeRegistration(selectedRole);
+  };
+
+  const completeRegistration = async (selectedRole: UserRole) => {
     setIsRegistering(true);
 
     try {
@@ -31,35 +51,27 @@ function App() {
       // Update local role state
       selectRole(selectedRole);
 
-      toast.success('Registration successful', {
-        description: `You're registered as ${selectedRole === 'victim' ? 'someone needing help' : 'a helper'}`,
-      });
-
     } catch (error) {
       console.error('Failed to register user:', error);
-
-      let errorMessage = 'Please try again';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        // Extract detail from APIError if available
-        if ('detail' in error && error.detail) {
-          if (typeof error.detail === 'string') {
-            errorMessage = error.detail;
-          } else if (Array.isArray(error.detail)) {
-            // Pydantic validation errors
-            errorMessage = error.detail.map((e: any) =>
-              `${e.loc.join('.')}: ${e.msg}`
-            ).join(', ');
-          }
-        }
-      }
-
-      toast.error('Registration failed', {
-        description: errorMessage,
-      });
     } finally {
       setIsRegistering(false);
     }
+  };
+
+  const handleInitialHelpSubmitted = async (caseId: number) => {
+    // After submitting the help request, close dialog and let them see dashboard
+    console.log('Help request submitted with case ID:', caseId);
+    setShowInitialHelpDialog(false);
+    setPendingRole(null);
+    // The user is already registered, so hasRole will be true and they'll see the dashboard
+  };
+
+  const handleInitialDialogClose = () => {
+    // If user closes dialog without submitting, clear everything and go back to role selection
+    setShowInitialHelpDialog(false);
+    setPendingRole(null);
+    clearRole();
+    clearIdentity();
   };
 
   const handleClearRole = () => {
@@ -67,11 +79,25 @@ function App() {
     clearIdentity();
   };
 
+  // Create a temporary disaster for the initial dialog
+  const tempDisaster: DisasterInfo = {
+    id: 'temp-initial',
+    name: 'Emergency Response',
+    type: 'flood' as const,
+    date: new Date(),
+    location: 'Current Location',
+    center: location || { lat: 51.5074, lng: -0.1278 },
+    severity: 'moderate' as const,
+    affectedRadius: 50,
+    isActive: true,
+  };
+
   // Show role selection if no role chosen
   if (!hasRole) {
     return (
       <>
         <RoleSelection onSelectRole={handleRoleSelect} />
+
         {isRegistering && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="glass p-8 rounded-lg flex items-center gap-4">
@@ -80,6 +106,21 @@ function App() {
             </div>
           </div>
         )}
+      </>
+    );
+  }
+
+  // Show help request dialog immediately after victim registers (before dashboard)
+  if (hasRole && showInitialHelpDialog) {
+    return (
+      <>
+        <RequestHelpDialog
+          open={showInitialHelpDialog}
+          onClose={handleInitialDialogClose}
+          onSubmitSuccess={handleInitialHelpSubmitted}
+          userLocation={location}
+          disaster={tempDisaster}
+        />
       </>
     );
   }

@@ -16,15 +16,9 @@ export function CaseDetailsDialog({ helpRequest, onClose, onClaim }: CaseDetails
     setClaiming(true);
     try {
       await onClaim(helpRequest.id);
-      toast.success('Case claimed successfully!', {
-        description: 'You are now responding to this help request',
-      });
       onClose();
     } catch (error) {
       console.error('Failed to claim case:', error);
-      toast.error('Failed to claim case', {
-        description: error instanceof Error ? error.message : 'Please try again',
-      });
     } finally {
       setClaiming(false);
     }

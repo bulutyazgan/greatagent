@@ -169,8 +169,9 @@ def get_case(case_id: int) -> Optional[Dict]:
         location_str = row['location']
         if location_str:
             coords = location_str.strip('()').split(',')
-            latitude = float(coords[0])
-            longitude = float(coords[1])
+            # PostgreSQL point is (x, y) = (longitude, latitude)
+            longitude = float(coords[0])
+            latitude = float(coords[1])
         else:
             latitude = None
             longitude = None
@@ -264,8 +265,9 @@ def get_nearby_cases(
             location_str = row['location']
             if location_str:
                 coords = location_str.strip('()').split(',')
-                case_lat = float(coords[0])
-                case_lon = float(coords[1])
+                # PostgreSQL point is (x, y) = (longitude, latitude)
+                case_lon = float(coords[0])
+                case_lat = float(coords[1])
 
                 # Calculate distance
                 distance_meters = haversine_distance(latitude, longitude, case_lat, case_lon)

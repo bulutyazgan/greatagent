@@ -1,18 +1,119 @@
-import { useEffect } from 'react';
-import type { Location } from '@/types';
+import { useEffect, useRef } from 'react';
+import type { Location, UserRole } from '@/types';
 
 interface UserLocationMarkerProps {
   map: any; // Google Maps Map instance
   userLocation: Location | null;
+  userRole?: UserRole; // Optional: to display different icons for helpers
 }
 
-export function UserLocationMarker({ map, userLocation }: UserLocationMarkerProps) {
-  useEffect(() => {
-    if (!map || !window.google || !userLocation) return;
+export function UserLocationMarker({ map, userLocation, userRole }: UserLocationMarkerProps) {
+  const markerRef = useRef<any>(null);
+  const circleRef = useRef<any>(null);
 
-    // Create a blue marker for user's location
+  // Create marker once when map is ready
+  useEffect(() => {
+    if (!map || !window.google) return;
+
+    // For helpers, use custom image marker with circle border and "You" pill
+    if (userRole === 'responder') {
+      // Create a custom marker using OverlayView for HTML content
+      class CustomMarker extends window.google.maps.OverlayView {
+        position: any;
+        containerDiv: HTMLDivElement | null = null;
+
+        constructor(position: any) {
+          super();
+          this.position = position;
+        }
+
+        setPosition(newPosition: any) {
+          this.position = newPosition;
+          this.draw();
+        }
+
+        onAdd() {
+          const div = document.createElement('div');
+          div.style.position = 'absolute';
+          div.style.cursor = 'pointer';
+          div.style.zIndex = '1000';  // Ensure it's above all victim markers
+
+          div.innerHTML = `
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+              <!-- Image without border -->
+              <div style="
+                width: 50px;
+                height: 50px;
+                border-radius: 50%;
+                overflow: hidden;
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+                background: white;
+                padding: 2px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 4px;
+              ">
+                <img src="/assets/helpful.png" style="width: 100%; height: 100%; object-fit: contain;" />
+              </div>
+
+              <!-- "You" pill below -->
+              <div style="
+                background: linear-gradient(135deg, #A67C52 0%, #8B5E34 100%);
+                color: #F5F1EB;
+                font-size: 11px;
+                font-weight: 700;
+                padding: 4px 12px;
+                border-radius: 12px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(245, 241, 235, 0.3);
+                white-space: nowrap;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              ">You</div>
+            </div>
+          `;
+
+          this.containerDiv = div;
+          const panes = this.getPanes();
+          panes!.overlayImage.appendChild(div);
+        }
+
+        draw() {
+          const overlayProjection = this.getProjection();
+          const position = overlayProjection.fromLatLngToDivPixel(
+            new window.google.maps.LatLng(this.position.lat, this.position.lng)
+          );
+
+          if (this.containerDiv) {
+            this.containerDiv.style.left = (position.x - 25) + 'px';  // Center horizontally (50px / 2)
+            this.containerDiv.style.top = (position.y - 60) + 'px';   // Position above point (image + pill height)
+          }
+        }
+
+        onRemove() {
+          if (this.containerDiv) {
+            this.containerDiv.parentNode?.removeChild(this.containerDiv);
+            this.containerDiv = null;
+          }
+        }
+      }
+
+      const customMarker = new CustomMarker(userLocation || { lat: 0, lng: 0 });
+      customMarker.setMap(map);
+      markerRef.current = customMarker;
+
+      // Cleanup
+      return () => {
+        if (markerRef.current) {
+          markerRef.current.setMap(null);
+          markerRef.current = null;
+        }
+      };
+    }
+
+    // For victims (or no role), use the blue circle marker
     const marker = new window.google.maps.Marker({
-      position: userLocation,
+      position: userLocation || { lat: 0, lng: 0 },
       map: map,
       title: 'Your Location',
       icon: {
@@ -29,7 +130,7 @@ export function UserLocationMarker({ map, userLocation }: UserLocationMarkerProp
     // Create a pulsing circle effect around the user marker
     const pulseCircle = new window.google.maps.Circle({
       map: map,
-      center: userLocation,
+      center: userLocation || { lat: 0, lng: 0 },
       radius: 50, // 50 meters radius
       fillColor: '#3b82f6',
       fillOpacity: 0.15,
@@ -38,6 +139,9 @@ export function UserLocationMarker({ map, userLocation }: UserLocationMarkerProp
       strokeWeight: 2,
       zIndex: 999,
     });
+
+    markerRef.current = marker;
+    circleRef.current = pulseCircle;
 
     // Create info window for user location
     const infoContent = `
@@ -80,11 +184,38 @@ export function UserLocationMarker({ map, userLocation }: UserLocationMarkerProp
 
     // Cleanup function to remove marker, circle, and info window
     return () => {
-      marker.setMap(null);
-      pulseCircle.setMap(null);
+      if (markerRef.current) {
+        markerRef.current.setMap(null);
+        markerRef.current = null;
+      }
+      if (circleRef.current) {
+        circleRef.current.setMap(null);
+        circleRef.current = null;
+      }
       infoWindow.close();
     };
-  }, [map, userLocation]);
+  }, [map, userRole]);
+
+  // Update marker position when location changes
+  useEffect(() => {
+    if (!userLocation || !markerRef.current) return;
+
+    if (userRole === 'responder') {
+      // Update custom marker position
+      if (markerRef.current.setPosition) {
+        markerRef.current.setPosition(userLocation);
+      }
+    } else {
+      // Update standard marker position
+      if (markerRef.current.setPosition) {
+        markerRef.current.setPosition(userLocation);
+      }
+      // Update circle center
+      if (circleRef.current) {
+        circleRef.current.setCenter(userLocation);
+      }
+    }
+  }, [userLocation, userRole]);
 
   return null; // This component doesn't render anything in React
 }

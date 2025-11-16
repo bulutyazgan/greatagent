@@ -2,18 +2,49 @@
 
 @layer base {
   :root {
-    --background-primary: #0a0a0a;
-    --background-secondary: #171717;
-    --background-elevated: #1f1f1f;
+    /* ===== BEACON WARM EARTH PALETTE ===== */
+    /* Sandpaper browns and warm earth tones */
 
-    --glass-bg: rgba(23, 23, 23, 0.7);
-    --glass-border: rgba(255, 255, 255, 0.1);
+    /* PRIMARY - Warm Caramel Brown */
+    --color-primary: #A67C52;
+    --color-primary-light: #C4A078;
+    --color-primary-dark: #8B5E34;
 
-    --accent-blue: #3b82f6;
-    --accent-green: #10b981;
-    --accent-orange: #f59e0b;
-    --accent-red: #ef4444;
-    --accent-purple: #a855f7;
+    /* SECONDARY - Soft Sage Green */
+    --color-secondary: #8B9B7A;
+    --color-secondary-light: #A8B599;
+    --color-secondary-dark: #6D7D5C;
+
+    /* ALERT - Terracotta Clay */
+    --color-alert: #C17A5B;
+    --color-alert-light: #D99B82;
+    --color-alert-dark: #A25C41;
+
+    /* NEUTRAL - Sandpaper Beige to Espresso */
+    --color-neutral-50: #F5F1EB;
+    --color-neutral-100: #EBE4D9;
+    --color-neutral-200: #D9CFC0;
+    --color-neutral-300: #C4B5A3;
+    --color-neutral-400: #A69583;
+    --color-neutral-500: #8A7866;
+    --color-neutral-600: #6E5F4E;
+    --color-neutral-700: #544639;
+    --color-neutral-800: #3D3128;
+    --color-neutral-900: #2A2019;
+
+    /* LEGACY SUPPORT - Mapped to new palette */
+    --background-primary: #2A2019;    /* neutral-900 */
+    --background-secondary: #3D3128;  /* neutral-800 */
+    --background-elevated: #544639;   /* neutral-700 */
+
+    --glass-bg: rgba(61, 49, 40, 0.7);
+    --glass-border: rgba(196, 181, 163, 0.1);
+
+    --accent-blue: #A67C52;    /* primary */
+    --accent-green: #8B9B7A;   /* secondary */
+    --accent-orange: #C17A5B;  /* alert */
+    --accent-red: #A25C41;     /* alert-dark */
+    --accent-purple: #C4A078;  /* primary-light */
   }
 
   body {
@@ -49,50 +80,50 @@
   border-color: rgba(255, 255, 255, 0.15);
 }
 
-/* Victim Card - Red Theme */
+/* Victim Card - Terracotta Theme */
 .card-victim {
-  background: rgba(239, 68, 68, 0.05);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(193, 122, 91, 0.05);
+  border-color: rgba(193, 122, 91, 0.3);
 }
 
 .card-victim-icon-bg {
-  background: rgba(239, 68, 68, 0.2);
+  background: rgba(193, 122, 91, 0.2);
 }
 
 .card-victim-icon-bg-hover {
-  background: rgba(239, 68, 68, 0.3);
+  background: rgba(193, 122, 91, 0.3);
 }
 
 .card-victim-button {
-  background: rgba(239, 68, 68, 0.3);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(193, 122, 91, 0.3);
+  border-color: rgba(193, 122, 91, 0.5);
 }
 
 .card-victim-button:hover {
-  background: rgba(239, 68, 68, 0.4);
+  background: rgba(193, 122, 91, 0.4);
 }
 
-/* Responder Card - Green Theme */
+/* Responder Card - Sage Green Theme */
 .card-responder {
-  background: rgba(16, 185, 129, 0.05);
-  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(139, 155, 122, 0.05);
+  border-color: rgba(139, 155, 122, 0.3);
 }
 
 .card-responder-icon-bg {
-  background: rgba(16, 185, 129, 0.2);
+  background: rgba(139, 155, 122, 0.2);
 }
 
 .card-responder-icon-bg-hover {
-  background: rgba(16, 185, 129, 0.3);
+  background: rgba(139, 155, 122, 0.3);
 }
 
 .card-responder-button {
-  background: rgba(16, 185, 129, 0.3);
-  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(139, 155, 122, 0.3);
+  border-color: rgba(139, 155, 122, 0.5);
 }
 
 .card-responder-button:hover {
-  background: rgba(16, 185, 129, 0.4);
+  background: rgba(139, 155, 122, 0.4);
 }
 
 /* Google Maps InfoWindow Custom Styling */
@@ -132,4 +163,44 @@
   width: 16px !important;
   height: 16px !important;
   margin: 8px !important;
+}
+
+/* ===== REMOVE ALL GOOGLE MAPS UI ELEMENTS ===== */
+
+/* Hide Google logo/watermark */
+a[href^="https://maps.google.com/maps"] {
+  display: none !important;
+}
+
+.gm-style a[href^="https://maps.google.com/maps"] {
+  display: none !important;
+}
+
+.gm-style-cc {
+  display: none !important;
+}
+
+/* Hide Terms of Use, Report a map error, Keyboard shortcuts */
+.gmnoprint {
+  display: none !important;
+}
+
+/* Hide any remaining Google attributions */
+.gm-style-cc,
+.gm-style .gm-style-cc,
+.gm-bundled-control,
+.gmnoprint div {
+  display: none !important;
+}
+
+/* Hide Map Data attribution */
+.gm-style .gm-style-cc > div,
+.gm-style .gm-style-cc > div > div {
+  display: none !important;
+}
+
+/* Ensure controls container is hidden */
+.gm-svpc,
+.gm-control-active {
+  display: none !important;
 }

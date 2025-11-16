@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { FileText, Shield, Send, Clock, Maximize2, Minimize2, MapPin, Users, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { FileText, Shield, Send, Clock, Maximize2, Minimize2, MapPin, Users, AlertTriangle, Navigation } from 'lucide-react';
 import { getHelperGuide, type HelperGuide, type Case, getCase, getAssignment, type Assignment } from '@/services/api';
-import { MapContainer } from '@/components/map/MapContainer';
+import { RouteMap } from '@/components/map/RouteMap';
 import type { Location, HelpRequest } from '@/types';
 
 interface MyAssignmentPanelProps {
@@ -22,21 +22,66 @@ export function MyAssignmentPanel({ assignmentId }: MyAssignmentPanelProps) {
   const [loading, setLoading] = useState(true);
   const [updateText, setUpdateText] = useState('');
   const [submittingUpdate, setSubmittingUpdate] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [routeDistance, setRouteDistance] = useState<string>('');
+  const [routeDuration, setRouteDuration] = useState<string>('');
+
+  // Draggable panel state
+  const [panelPosition, setPanelPosition] = useState<'top' | 'bottom'>('top');
+  const [dragStartY, setDragStartY] = useState<number>(0);
+  const [currentY, setCurrentY] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Travel mode state
+  const [travelMode, setTravelMode] = useState<'DRIVING' | 'WALKING'>('DRIVING');
+
+  // Fetch helper's latest location from database
+  const [helperLocation, setHelperLocation] = useState<Location | null>(null);
+
+  useEffect(() => {
+    const fetchHelperLocation = async () => {
+      const userId = localStorage.getItem('beacon_user_id');
+      if (!userId) return;
+
+      try {
+        const response = await fetch(`http://localhost:8000/api/users/${userId}/location-history?limit=1`);
+        const data = await response.json();
+
+        if (data.locations && data.locations.length > 0) {
+          const latestLocation = data.locations[0];
+          setHelperLocation({
+            lat: latestLocation.latitude,
+            lng: latestLocation.longitude
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch helper location:', err);
+      }
+    };
+
+    fetchHelperLocation();
+
+    // Poll for location updates every 2 seconds
+    const interval = setInterval(fetchHelperLocation, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Fetch assignment data
   useEffect(() => {
     const fetchAssignment = async () => {
       try {
+        console.log('[MyAssignmentPanel] Fetching assignment:', assignmentId);
         const assignmentResponse = await getAssignment(assignmentId);
+        console.log('[MyAssignmentPanel] Assignment response:', assignmentResponse);
         setAssignment(assignmentResponse);
 
         // Fetch the case data
+        console.log('[MyAssignmentPanel] Fetching case:', assignmentResponse.case_id);
         const caseResponse = await getCase(assignmentResponse.case_id);
+        console.log('[MyAssignmentPanel] Case response:', caseResponse);
         setCaseData(caseResponse);
       } catch (err) {
-        console.error('Failed to fetch assignment:', err);
+        console.error('[MyAssignmentPanel] Failed to fetch assignment or case:', err);
       }
     };
 
@@ -246,50 +291,161 @@ export function MyAssignmentPanel({ assignmentId }: MyAssignmentPanelProps) {
     }
   };
 
+  // Drag handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    setDragStartY(e.touches[0].clientY);
+    setCurrentY(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    setCurrentY(e.touches[0].clientY);
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+
+    const deltaY = currentY - dragStartY;
+    const threshold = 100; // Minimum drag distance to trigger position change
+
+    if (panelPosition === 'top' && deltaY > threshold) {
+      setPanelPosition('bottom');
+    } else if (panelPosition === 'bottom' && deltaY < -threshold) {
+      setPanelPosition('top');
+    }
+
+    setCurrentY(0);
+    setDragStartY(0);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStartY(e.clientY);
+    setCurrentY(e.clientY);
+  };
+
+  // Add mouse move/up listeners
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setCurrentY(e.clientY);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+
+      const deltaY = currentY - dragStartY;
+      const threshold = 100;
+
+      if (panelPosition === 'top' && deltaY > threshold) {
+        setPanelPosition('bottom');
+      } else if (panelPosition === 'bottom' && deltaY < -threshold) {
+        setPanelPosition('top');
+      }
+
+      setCurrentY(0);
+      setDragStartY(0);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, currentY, dragStartY, panelPosition]);
+
+  // Stable callback for route calculation
+  const handleRouteCalculated = useCallback((distance: string, duration: string) => {
+    setRouteDistance(distance);
+    setRouteDuration(duration);
+  }, []);
+
   return (
-    <div className="fixed inset-0 pt-16 flex flex-col lg:flex-row">
-      {/* Map Section - Left side on desktop, top on mobile */}
-      <div className="flex-1 h-1/2 lg:h-full lg:w-1/2 relative">
-        {caseLocation && helpRequest ? (
+    <div className="fixed inset-0 flex flex-col">
+      {/* Full Screen Map */}
+      <div className="flex-1 relative">
+        {caseLocation ? (
           <>
-            <MapContainer
-              center={caseLocation}
-              zoom={16}
-              helpRequests={[helpRequest]}
-              userLocation={caseLocation}
-              onMarkerClick={() => {}}
+            <RouteMap
+              helperLocation={helperLocation}
+              victimLocation={caseLocation}
+              onRouteCalculated={handleRouteCalculated}
+              travelMode={travelMode}
             />
 
-            {/* Assignment Status Overlay - Fixed position on map */}
-            <div className="absolute top-6 right-4 z-10 mt-4">
-              <div className="glass rounded-lg p-4 min-w-[200px] border border-white/10 shadow-2xl">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  <span className="text-sm text-white font-medium">Active Assignment</span>
-                </div>
-                <p className="text-xs text-gray-400 mb-1">
-                  Responding to case
-                </p>
-                {caseData && (
-                  <>
-                    <div className="mt-2 pt-2 border-t border-white/10">
-                      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${getUrgencyColor(caseData.urgency)}`}>
-                        <AlertTriangle className="w-3 h-3" />
-                        <span className="font-semibold uppercase">{caseData.urgency}</span>
-                      </div>
+            {/* Assignment Status Bar - Top horizontal */}
+            <div className="absolute top-4 left-4 right-4 z-10">
+              <div className="glass rounded-2xl p-4 border border-white/10 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                    <span className="text-sm text-white font-semibold">Active Assignment #{assignmentId}</span>
+                  </div>
+                  {caseData && (
+                    <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs ${getUrgencyColor(caseData.urgency)}`}>
+                      <AlertTriangle className="w-3 h-3" />
+                      <span className="font-semibold uppercase">{caseData.urgency}</span>
                     </div>
-                    {caseData.people_count && caseData.people_count > 0 && (
-                      <div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
-                        <Users className="w-3 h-3" />
-                        <span>{caseData.people_count} people</span>
+                  )}
+                </div>
+                {caseData && (routeDistance || caseData.people_count) && (
+                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/10">
+                    {routeDistance && routeDuration && (
+                      <>
+                        <div className="flex items-center gap-1.5 text-xs text-gray-300">
+                          <Navigation className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="font-semibold">{routeDistance}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-gray-300">
+                          <Clock className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="font-semibold">{routeDuration}</span>
+                        </div>
+                      </>
+                    )}
+                    {caseData.people_count > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs text-gray-300">
+                        <Users className="w-3.5 h-3.5 text-gray-400" />
+                        <span className="font-semibold">{caseData.people_count} people</span>
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
-                <div className="mt-2 pt-2 border-t border-white/10">
-                  <p className="text-xs text-gray-400">Assignment #{assignmentId}</p>
-                </div>
               </div>
+            </div>
+
+            {/* Travel Mode Selector - Top Right below status */}
+            <div className="absolute top-36 right-4 z-10 flex gap-2">
+              <button
+                onClick={() => setTravelMode('DRIVING')}
+                className={`
+                  w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200 p-2
+                  ${travelMode === 'DRIVING'
+                    ? 'bg-blue-500/80 border-2 border-blue-300 shadow-lg shadow-blue-500/50'
+                    : 'glass border border-white/20 hover:border-white/40'
+                  }
+                `}
+                title="Driving"
+              >
+                <img src="/assets/car.png" alt="Car" className="w-full h-full object-contain" />
+              </button>
+              <button
+                onClick={() => setTravelMode('WALKING')}
+                className={`
+                  w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200 p-2
+                  ${travelMode === 'WALKING'
+                    ? 'bg-blue-500/80 border-2 border-blue-300 shadow-lg shadow-blue-500/50'
+                    : 'glass border border-white/20 hover:border-white/40'
+                  }
+                `}
+                title="Walking"
+              >
+                <img src="/assets/walk.png" alt="Walk" className="w-full h-full object-contain" />
+              </button>
             </div>
           </>
         ) : (
@@ -301,34 +457,27 @@ export function MyAssignmentPanel({ assignmentId }: MyAssignmentPanelProps) {
         )}
       </div>
 
-      {/* Panel Section - Right side on desktop, bottom on mobile */}
+      {/* Draggable Info Panel */}
       <div
         className={`
-          flex-1 glass flex flex-col overflow-hidden transition-all duration-300
-          ${isExpanded
-            ? 'fixed inset-0 top-16 z-20 lg:left-1/2'
-            : 'h-1/2 lg:h-full lg:w-1/2'
-          }
+          fixed left-0 right-0 z-20 glass flex flex-col transition-all duration-300 ease-out
+          ${panelPosition === 'top' ? 'top-[30vh]' : 'top-[calc(100vh-120px)]'}
         `}
+        style={{
+          height: 'calc(100vh - 30vh)',
+          transform: isDragging ? `translateY(${currentY - dragStartY}px)` : 'translateY(0)',
+          transition: isDragging ? 'none' : 'all 0.3s ease-out',
+        }}
       >
-        {/* Header with Expand/Collapse button */}
-        <div className="p-4 border-b border-white/10 flex-shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            <h2 className="text-lg font-semibold text-white">My Assignment</h2>
-            <span className="text-sm text-gray-400">#{assignmentId}</span>
-          </div>
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-            title={isExpanded ? "Minimize" : "Expand for larger view"}
-          >
-            {isExpanded ? (
-              <Minimize2 className="w-5 h-5 text-gray-400" />
-            ) : (
-              <Maximize2 className="w-5 h-5 text-gray-400" />
-            )}
-          </button>
+        {/* Apple-style Pull Handle */}
+        <div
+          className="flex-shrink-0 flex flex-col items-center py-2 cursor-grab active:cursor-grabbing"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+        >
+          <div className="w-10 h-1.5 rounded-full bg-gray-400/40 mb-2" />
         </div>
 
         {/* Case Details Section */}
@@ -351,8 +500,8 @@ export function MyAssignmentPanel({ assignmentId }: MyAssignmentPanelProps) {
           </div>
         )}
 
-        {/* Chat Messages Area - Hero Agent Guidance */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Hero Agent Guidance - Full Width Markdown */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading && chatMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
               <Clock className="w-8 h-8 text-blue-400 animate-pulse mb-3" />
@@ -360,41 +509,34 @@ export function MyAssignmentPanel({ assignmentId }: MyAssignmentPanelProps) {
               <p className="text-gray-400 text-sm mt-1">Generating personalized guidance for responders</p>
             </div>
           ) : (
-            <>
-              {chatMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-lg p-4 ${
-                      message.sender === 'user'
-                        ? 'bg-green-500/20 border border-green-500/30'
-                        : 'bg-blue-500/20 border border-blue-500/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      {message.sender === 'hero_agent' ? (
-                        <Shield className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full bg-green-400 flex-shrink-0" />
-                      )}
-                      <span className={`text-xs font-semibold ${
-                        message.sender === 'user' ? 'text-green-400' : 'text-blue-400'
-                      }`}>
-                        {message.sender === 'user' ? 'You' : 'Hero Agent'}
-                      </span>
-                      <span className="text-xs text-gray-500 ml-auto">
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+            <div className="prose prose-invert prose-sm max-w-none">
+              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-white/10">
+                <Shield className="w-5 h-5 text-blue-400" />
+                <h3 className="text-base font-semibold text-white m-0">Hero Agent Guidance</h3>
+              </div>
+              {chatMessages.map((message, index) => (
+                <div key={message.id} className="mb-4">
+                  {message.sender === 'hero_agent' ? (
+                    <div className="text-gray-200 leading-relaxed whitespace-pre-wrap">
                       {message.text}
-                    </p>
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="my-4 pl-4 border-l-2 border-green-500/50 bg-green-500/5 py-2">
+                      <div className="text-xs text-green-400 font-semibold mb-1">Your Update</div>
+                      <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
+                        {message.text}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  )}
+                  {index < chatMessages.length - 1 && message.sender === 'hero_agent' && chatMessages[index + 1]?.sender === 'hero_agent' && (
+                    <div className="my-3 h-px bg-white/10" />
+                  )}
                 </div>
               ))}
-            </>
+            </div>
           )}
         </div>
 

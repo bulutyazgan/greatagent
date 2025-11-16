@@ -1,70 +1,61 @@
-// Dark theme with roads visible but no labels/text
-export const darkMapTheme: any[] = [
-  // Base map - dark background
+// Clean satellite/hybrid theme - ONLY show district/borough/city names
+export const cleanHybridTheme: any[] = [
+  // Hide ALL road labels (street names)
   {
-    elementType: "geometry",
-    stylers: [{ color: "#1a1a1a" }],
-  },
-  // Hide ALL labels (road names, place names, etc.)
-  {
+    featureType: "road",
     elementType: "labels",
     stylers: [{ visibility: "off" }],
   },
-  // Hide all POIs (airports, shops, restaurants, etc.)
+
+  // Hide ALL POIs (landmarks, tube stations, restaurants, shops, etc.)
   {
     featureType: "poi",
     stylers: [{ visibility: "off" }],
   },
-  // Show roads but hide their labels
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#2b2b2b" }],
-  },
-  {
-    featureType: "road",
-    elementType: "labels",
-    stylers: [{ visibility: "off" }],
-  },
-  // Highways slightly lighter
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#3d3d3d" }],
-  },
-  // Hide transit (subway, airport icons, etc.)
+
+  // Hide transit labels (subway/metro stations, bus stops, etc.)
   {
     featureType: "transit",
     stylers: [{ visibility: "off" }],
   },
-  // Show water for geographic context
+
+  // SHOW ONLY administrative area labels (districts, boroughs, cities)
+  {
+    featureType: "administrative.locality",  // Cities and towns
+    elementType: "labels",
+    stylers: [{ visibility: "on" }],
+  },
+  {
+    featureType: "administrative.neighborhood",  // Neighborhoods and districts
+    elementType: "labels",
+    stylers: [{ visibility: "on" }],
+  },
+
+  // Hide water labels (river names, lake names, etc.)
   {
     featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#0f1e2e" }],
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
   },
-  // Show parks/green spaces
+
+  // Hide landscape/park labels
   {
     featureType: "landscape",
-    elementType: "geometry",
-    stylers: [{ color: "#1a1a1a" }],
-  },
-  // Hide administrative labels but keep boundaries subtle
-  {
-    featureType: "administrative",
     elementType: "labels",
     stylers: [{ visibility: "off" }],
   },
 ];
 
-// Map options for disaster zone
+// Map options for disaster zone - TERRAIN mode with bright, natural colors
 export const defaultMapOptions: any = {
-  styles: darkMapTheme,
-  disableDefaultUI: true,
-  zoomControl: true,
-  mapTypeControl: false,
-  streetViewControl: false,
-  fullscreenControl: true,
-  clickableIcons: false,
-  gestureHandling: 'greedy',
+  disableDefaultUI: true,         // Disables ALL default controls
+  zoomControl: false,             // No zoom buttons (+/-)
+  mapTypeControl: false,          // No map/satellite toggle
+  streetViewControl: false,       // No street view pegman
+  fullscreenControl: false,       // No fullscreen button
+  scaleControl: false,            // No scale indicator
+  rotateControl: false,           // No rotation control
+  clickableIcons: false,          // Icons not clickable
+  gestureHandling: 'greedy',      // Allow scrolling without Ctrl
+  keyboardShortcuts: false,       // Disable keyboard shortcuts UI
 };

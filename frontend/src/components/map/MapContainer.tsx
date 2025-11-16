@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
-import type { Location, HelpRequest } from '@/types';
-import { defaultMapOptions } from '@/styles/map-theme';
+import type { Location, HelpRequest, UserRole } from '@/types';
+import { defaultMapOptions, cleanHybridTheme } from '@/styles/map-theme';
 import { VictimMarkers } from './VictimMarkers';
 import { HelperMarkers, type Helper } from './HelperMarkers';
-import { HeatmapLayer } from './HeatmapLayer';
-import { HeatmapToggle } from './HeatmapToggle';
 import { UserLocationMarker } from './UserLocationMarker';
+import { CaseGroupPolygons, type CaseGroup } from './CaseGroupPolygons';
 
 interface MapContainerProps {
   center: Location;
   zoom?: number;
   helpRequests?: HelpRequest[];
   helpers?: Helper[];
+  caseGroups?: CaseGroup[];
   userLocation?: Location | null;
+  userRole?: UserRole;
   onMapLoad?: (map: any) => void;
   onMarkerClick?: (request: HelpRequest) => void;
   onHelperClick?: (helper: Helper) => void;
+  onCaseGroupClick?: (caseGroup: CaseGroup) => void;
 }
 
 // Get API key from environment
@@ -25,12 +27,11 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 // Flag to track if setOptions has been called
 let optionsConfigured = false;
 
-export function MapContainer({ center, zoom = 15, helpRequests = [], helpers = [], userLocation, onMapLoad, onMarkerClick, onHelperClick }: MapContainerProps) {
+export function MapContainer({ center, zoom = 15, helpRequests = [], helpers = [], caseGroups = [], userLocation, userRole, onMapLoad, onMarkerClick, onHelperClick, onCaseGroupClick }: MapContainerProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(false);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -58,7 +59,11 @@ export function MapContainer({ center, zoom = 15, helpRequests = [], helpers = [
           ...defaultMapOptions,
           center,
           zoom,
+          styles: cleanHybridTheme,  // Apply clean styling - ONLY show district/borough/city names
         });
+
+        // Set HYBRID mode for aerial imagery WITH labels (ONLY administrative areas)
+        mapInstance.setMapTypeId('hybrid');
 
         setMap(mapInstance);
         setLoading(false);
@@ -96,9 +101,17 @@ export function MapContainer({ center, zoom = 15, helpRequests = [], helpers = [
       <UserLocationMarker
         map={map}
         userLocation={userLocation || null}
+        userRole={userRole}
       />
 
-      {/* Victim markers */}
+      {/* Case group polygons */}
+      <CaseGroupPolygons
+        map={map}
+        caseGroups={caseGroups}
+        onPolygonClick={onCaseGroupClick}
+      />
+
+      {/* Victim markers (circles) */}
       <VictimMarkers
         map={map}
         helpRequests={helpRequests}
@@ -110,13 +123,6 @@ export function MapContainer({ center, zoom = 15, helpRequests = [], helpers = [
         map={map}
         helpers={helpers}
         onHelperClick={onHelperClick}
-      />
-
-      {/* Heatmap layer */}
-      <HeatmapLayer
-        map={map}
-        helpRequests={helpRequests}
-        visible={showHeatmap}
       />
 
       {/* Loading overlay */}
@@ -144,16 +150,6 @@ export function MapContainer({ center, zoom = 15, helpRequests = [], helpers = [
               </ul>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Heatmap toggle button */}
-      {map && !loading && !error && (
-        <div className="absolute top-4 right-4 z-10">
-          <HeatmapToggle
-            visible={showHeatmap}
-            onToggle={() => setShowHeatmap(!showHeatmap)}
-          />
         </div>
       )}
     </div>

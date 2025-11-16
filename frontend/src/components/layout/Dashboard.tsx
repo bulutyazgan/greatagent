@@ -1,17 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { UserRole, DisasterInfo, Location, HelpRequest, HelpRequestStatus } from '@/types';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import { useContinuousLocation } from '@/hooks/useContinuousLocation';
 import { Header } from './Header';
 import { MapContainer } from '@/components/map/MapContainer';
 import { LeftPanel } from '@/components/panels/LeftPanel';
 import { MyCasePanel } from '@/components/panels/MyCasePanel';
 import { MyAssignmentPanel } from '@/components/panels/MyAssignmentPanel';
 import { RequestHelpDialog } from './RequestHelpDialog';
+import { RequestHelpFAB } from './RequestHelpFAB';
 import { CallerGuideDialog } from './CallerGuideDialog';
 import { CaseDetailsDialog } from './CaseDetailsDialog';
-import { getNearbyCases, type Case, createAssignment, getNearbyHelpers } from '@/services/api';
+import { getNearbyCases, type Case, createAssignment, getNearbyHelpers, createOrUpdateUserLocation } from '@/services/api';
 import { toast } from 'sonner';
 import type { Helper } from '@/components/map/HelperMarkers';
+import { CaseGroupPolygons, type CaseGroup } from '@/components/map/CaseGroupPolygons';
+import { mockCaseGroups } from '@/data/mock-case-groups';
 
 interface DashboardProps {
   role: UserRole;
@@ -53,6 +57,30 @@ function mapCaseToHelpRequest(apiCase: Case): HelpRequest {
 export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
   const { location, loading } = useGeolocation();
 
+  // Stable callback for location updates
+  const handleDashboardLocationUpdate = useCallback(async (newLocation: Location) => {
+    const userId = localStorage.getItem('beacon_user_id');
+    if (userId) {
+      try {
+        await createOrUpdateUserLocation({
+          user_id: userId,
+          latitude: newLocation.lat,
+          longitude: newLocation.lng,
+          is_helper: role === 'responder',
+        });
+      } catch (err) {
+        console.error('Failed to update location:', err);
+      }
+    }
+  }, [role]);
+
+  // Continuous location tracking to update database
+  useContinuousLocation({
+    enabled: !loading && location !== null,
+    updateInterval: 1000,
+    onLocationUpdate: handleDashboardLocationUpdate,
+  });
+
   // State to manage map center - can be controlled by user location or help request selection
   const [mapCenter, setMapCenter] = useState<Location>(disaster.center);
 
@@ -66,6 +94,7 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
   // State for victim's own case (from localStorage)
   const [myCaseId, setMyCaseId] = useState<number | null>(() => {
     const stored = localStorage.getItem('last_case_id');
+    console.log('🔍 Checking localStorage for last_case_id:', stored);
     return stored ? parseInt(stored) : null;
   });
 
@@ -151,6 +180,8 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
   }, [location, role]);
 
   const handleRequestHelp = () => {
+    console.log('🔴 REQUEST HELP BUTTON CLICKED - Opening dialog');
+    console.log('Current state:', { showRequestHelpDialog, role, myCaseId });
     setShowRequestHelpDialog(true);
   };
 
@@ -178,13 +209,13 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
     });
   };
 
-  const handleMarkerClick = (request: HelpRequest) => {
+  const handleMarkerClick = useCallback((request: HelpRequest) => {
     console.log('Marker clicked:', request);
     if (role === 'responder') {
       setSelectedHelpRequest(request);
       setShowCaseDetailsDialog(true);
     }
-  };
+  }, [role]);
 
   const handleClaimCase = async (caseId: string) => {
     const userId = localStorage.getItem('beacon_user_id');
@@ -242,12 +273,34 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
 
   return (
     <div className="min-h-screen w-full bg-background-primary">
-      {/* Header */}
-      <Header
+      {/* Dev Reset Button - Top Left */}
+      <button
+        onClick={() => {
+          // Clear all localStorage
+          localStorage.removeItem('user_role');
+          localStorage.removeItem('beacon_user_id');
+          localStorage.removeItem('last_case_id');
+          localStorage.removeItem('last_assignment_id');
+          // Call the onChangeRole to reset state
+          onChangeRole();
+        }}
+        className="fixed top-4 left-4 z-[9999] px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:scale-105"
+        style={{
+          background: 'linear-gradient(135deg, #A67C52 0%, #8B5E34 100%)',
+          color: '#F5F1EB',
+          border: '1px solid rgba(245, 241, 235, 0.2)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        }}
+      >
+        🔄 Reset to Role Selection
+      </button>
+
+      {/* Header - REMOVED for cleaner UI */}
+      {/* <Header
         role={role}
         disaster={disaster}
         onChangeRole={onChangeRole}
-      />
+      /> */}
 
       {/* MyCasePanel for victims with active case - includes its own map */}
       {role === 'victim' && myCaseId ? (
@@ -257,23 +310,18 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
         <MyAssignmentPanel assignmentId={myAssignmentId} />
       ) : (
         <>
-          {/* Left Panel for responders and victims without cases */}
-          <LeftPanel
-            role={role}
-            helpRequests={helpRequests}
-            onHelpRequestClick={handleSidebarRequestClick}
-            onLocationClick={handleLocationClick}
-          />
-
-          {/* Map Container */}
-          <div className="pt-16 h-screen">
+          {/* Map Container - Full screen without left panel */}
+          <div className="h-screen">
             <MapContainer
               center={mapCenter}
               zoom={role === 'victim' ? 16 : 13}
               helpRequests={helpRequests}
               helpers={role === 'responder' ? nearbyHelpers : []}
+              caseGroups={mockCaseGroups}
               userLocation={location}
+              userRole={role}
               onMarkerClick={handleMarkerClick}
+              onCaseGroupClick={(caseGroup) => console.log('Case group clicked:', caseGroup)}
             />
           </div>
         </>
@@ -312,6 +360,15 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
           onClaim={handleClaimCase}
         />
       )}
+
+      {/* Request Help FAB (Floating Action Button) - ALWAYS VISIBLE FOR DEBUGGING */}
+      {(() => {
+        console.log('🎯 FAB Render Check:', { role, myCaseId, shouldShow: role === 'victim' && !myCaseId });
+        // TEMPORARILY ALWAYS SHOW THE BUTTON FOR DEBUGGING
+        return (
+          <RequestHelpFAB onClick={handleRequestHelp} />
+        );
+      })()}
     </div>
   );
 }

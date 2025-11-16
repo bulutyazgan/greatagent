@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { HelpRequestType, Urgency, Location, DisasterInfo } from '@/types';
+import type { DisasterInfo, Location } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -9,26 +9,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   AlertCircle,
-  Heart,
-  Home,
-  Users,
-  Package,
-  HelpCircle,
   Loader2
 } from 'lucide-react';
-import { LocationPicker } from './LocationPicker';
 import { createCase } from '@/services/api';
 import { toast } from 'sonner';
 
@@ -41,79 +27,8 @@ interface RequestHelpDialogProps {
 }
 
 interface FormData {
-  type: HelpRequestType;
-  urgency: Urgency;
-  peopleCount: string;
   description: string;
-  userName: string;
-  location: Location | null;
 }
-
-const HELP_REQUEST_TYPES: { value: HelpRequestType; label: string; icon: any; description: string }[] = [
-  {
-    value: 'medical',
-    label: 'Medical Emergency',
-    icon: Heart,
-    description: 'Injuries, health crisis, medical supplies needed'
-  },
-  {
-    value: 'rescue',
-    label: 'Rescue Needed',
-    icon: AlertCircle,
-    description: 'Trapped, lost, or unable to evacuate'
-  },
-  {
-    value: 'shelter',
-    label: 'Shelter',
-    icon: Home,
-    description: 'Need safe location or evacuation'
-  },
-  {
-    value: 'food',
-    label: 'Food & Water',
-    icon: Package,
-    description: 'Food or water supply needed'
-  },
-  {
-    value: 'supplies',
-    label: 'Supplies',
-    icon: Package,
-    description: 'Blankets, first aid, equipment'
-  },
-  {
-    value: 'other',
-    label: 'Other',
-    icon: HelpCircle,
-    description: 'Other emergency assistance'
-  },
-];
-
-const URGENCY_LEVELS: { value: Urgency; label: string; color: string; description: string }[] = [
-  {
-    value: 'critical',
-    label: 'Critical',
-    color: 'text-accent-red',
-    description: 'Immediate danger, life-threatening'
-  },
-  {
-    value: 'high',
-    label: 'High',
-    color: 'text-accent-orange',
-    description: 'Serious need, time-sensitive'
-  },
-  {
-    value: 'medium',
-    label: 'Medium',
-    color: 'text-accent-orange',
-    description: 'Important, can wait briefly'
-  },
-  {
-    value: 'low',
-    label: 'Low',
-    color: 'text-accent-green',
-    description: 'Non-urgent'
-  },
-];
 
 export function RequestHelpDialog({
   open,
@@ -122,14 +37,10 @@ export function RequestHelpDialog({
   userLocation,
   disaster
 }: RequestHelpDialogProps) {
+  console.log('📋 RequestHelpDialog rendered with open =', open);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<FormData>({
-    type: 'medical',
-    urgency: 'medium',
-    peopleCount: '1',
     description: '',
-    userName: '',
-    location: userLocation,
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -137,25 +48,10 @@ export function RequestHelpDialog({
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
 
-    if (!formData.userName.trim()) {
-      newErrors.userName = 'Name is required';
-    }
-
-    if (!formData.location) {
-      newErrors.location = 'Location is required - please select your location on the map';
-    }
-
     if (!formData.description.trim()) {
-      newErrors.description = 'Description is required';
+      newErrors.description = 'Please describe your problem';
     } else if (formData.description.trim().length < 10) {
       newErrors.description = 'Please provide more details (at least 10 characters)';
-    }
-
-    const peopleCountNum = parseInt(formData.peopleCount);
-    if (isNaN(peopleCountNum) || peopleCountNum < 1) {
-      newErrors.peopleCount = 'Must be at least 1';
-    } else if (peopleCountNum > 1000) {
-      newErrors.peopleCount = 'Please contact emergency services for large groups';
     }
 
     setErrors(newErrors);
@@ -177,11 +73,14 @@ export function RequestHelpDialog({
         throw new Error('User not registered. Please refresh and try again.');
       }
 
-      // Create case via API
+      // Create case via API using userLocation from props
+      const lat = userLocation?.lat || 51.5074; // Fallback to London
+      const lng = userLocation?.lng || -0.1278;
+
       const response = await createCase({
         user_id: userId,
-        latitude: formData.location!.lat,
-        longitude: formData.location!.lng,
+        latitude: lat,
+        longitude: lng,
         raw_problem_description: formData.description,
       });
 
@@ -192,21 +91,11 @@ export function RequestHelpDialog({
 
       // Reset form
       setFormData({
-        type: 'medical',
-        urgency: 'medium',
-        peopleCount: '1',
         description: '',
-        userName: '',
-        location: userLocation,
       });
       setErrors({});
 
       onClose();
-
-      // Show success toast
-      toast.success('Help request submitted!', {
-        description: 'AI is analyzing your situation and generating safety guidance...',
-      });
 
       // Trigger refresh callback with case_id
       if (onSubmitSuccess) {
@@ -215,24 +104,6 @@ export function RequestHelpDialog({
 
     } catch (error) {
       console.error('Failed to submit help request:', error);
-
-      let errorMessage = 'Please try again';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        if ('detail' in error && error.detail) {
-          if (typeof error.detail === 'string') {
-            errorMessage = error.detail;
-          } else if (Array.isArray(error.detail)) {
-            errorMessage = error.detail.map((e: any) =>
-              `${e.loc.join('.')}: ${e.msg}`
-            ).join(', ');
-          }
-        }
-      }
-
-      toast.error('Failed to submit request', {
-        description: errorMessage,
-      });
     } finally {
       setSubmitting(false);
     }
@@ -245,174 +116,29 @@ export function RequestHelpDialog({
     }
   };
 
-  const handleLocationChange = (location: Location) => {
-    setFormData({ ...formData, location });
-    // Clear location error if it exists
-    if (errors.location) {
-      setErrors({ ...errors, location: undefined });
-    }
-  };
-
-  const selectedType = HELP_REQUEST_TYPES.find(t => t.value === formData.type);
-  const selectedUrgency = URGENCY_LEVELS.find(u => u.value === formData.urgency);
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Request Emergency Help</DialogTitle>
-          <DialogDescription>
-            Submit your help request. Nearby responders will be notified immediately.
+          <DialogTitle className="text-2xl">What's Your Emergency?</DialogTitle>
+          <DialogDescription className="text-base">
+            Describe your situation and our AI will analyze it to connect you with the right help.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 mt-4">
-          {/* Location Picker */}
+          {/* Description - ONLY FIELD */}
           <div className="space-y-2">
-            <Label>Your Location *</Label>
-            <LocationPicker
-              initialLocation={formData.location}
-              onLocationChange={handleLocationChange}
-            />
-            {errors.location && (
-              <p className="text-sm text-accent-red">{errors.location}</p>
-            )}
-          </div>
-
-          {/* Name */}
-          <div className="space-y-2">
-            <Label htmlFor="userName">Your Name *</Label>
-            <Input
-              id="userName"
-              placeholder="Enter your name"
-              value={formData.userName}
-              onChange={(e) => setFormData({ ...formData, userName: e.target.value })}
-              disabled={submitting}
-            />
-            {errors.userName && (
-              <p className="text-sm text-accent-red">{errors.userName}</p>
-            )}
-          </div>
-
-          {/* Help Request Type */}
-          <div className="space-y-2">
-            <Label htmlFor="type">Type of Help Needed *</Label>
-            <Select
-              value={formData.type}
-              onValueChange={(value) => setFormData({ ...formData, type: value as HelpRequestType })}
-              disabled={submitting}
-            >
-              <SelectTrigger id="type" className="bg-background-elevated">
-                <SelectValue>
-                  {selectedType && (
-                    <div className="flex items-center gap-2">
-                      <selectedType.icon className="w-4 h-4" />
-                      <span>{selectedType.label}</span>
-                    </div>
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="bg-background-elevated border-glass-border">
-                {HELP_REQUEST_TYPES.map((type) => (
-                  <SelectItem
-                    key={type.value}
-                    value={type.value}
-                    className="focus:bg-background-primary"
-                  >
-                    <div className="flex items-center gap-2">
-                      <type.icon className="w-4 h-4" />
-                      <div>
-                        <div className="font-medium text-gray-200">{type.label}</div>
-                        <div className="text-xs text-gray-500">{type.description}</div>
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Urgency Level */}
-          <div className="space-y-2">
-            <Label htmlFor="urgency">Urgency Level *</Label>
-            <Select
-              value={formData.urgency}
-              onValueChange={(value) => setFormData({ ...formData, urgency: value as Urgency })}
-              disabled={submitting}
-            >
-              <SelectTrigger id="urgency" className="bg-background-elevated">
-                <SelectValue>
-                  {selectedUrgency && (
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${
-                        selectedUrgency.value === 'critical' ? 'bg-accent-red' :
-                        selectedUrgency.value === 'high' ? 'bg-accent-orange' :
-                        selectedUrgency.value === 'medium' ? 'bg-yellow-500' :
-                        'bg-accent-green'
-                      }`} />
-                      <span className={selectedUrgency.color}>{selectedUrgency.label}</span>
-                    </div>
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="bg-background-elevated border-glass-border">
-                {URGENCY_LEVELS.map((urgency) => (
-                  <SelectItem
-                    key={urgency.value}
-                    value={urgency.value}
-                    className="focus:bg-background-primary"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${
-                        urgency.value === 'critical' ? 'bg-accent-red' :
-                        urgency.value === 'high' ? 'bg-accent-orange' :
-                        urgency.value === 'medium' ? 'bg-yellow-500' :
-                        'bg-accent-green'
-                      }`} />
-                      <div>
-                        <div className={`font-medium ${urgency.color}`}>{urgency.label}</div>
-                        <div className="text-xs text-gray-500">{urgency.description}</div>
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Number of People */}
-          <div className="space-y-2">
-            <Label htmlFor="peopleCount">Number of People Affected *</Label>
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-gray-500" />
-              <Input
-                id="peopleCount"
-                type="number"
-                min="1"
-                max="1000"
-                placeholder="1"
-                value={formData.peopleCount}
-                onChange={(e) => setFormData({ ...formData, peopleCount: e.target.value })}
-                disabled={submitting}
-                className="flex-1"
-              />
-            </div>
-            {errors.peopleCount && (
-              <p className="text-sm text-accent-red">{errors.peopleCount}</p>
-            )}
-          </div>
-
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description">Describe Your Situation *</Label>
+            <Label htmlFor="description" className="text-lg font-semibold">Describe Your Problem *</Label>
             <Textarea
               id="description"
-              placeholder="Please provide details about your situation, location landmarks, and any special needs..."
+              placeholder="Please tell us what's happening, where you are, and what help you need..."
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               disabled={submitting}
-              rows={5}
-              className="resize-none"
+              rows={8}
+              className="resize-none text-base"
+              autoFocus
             />
             {errors.description && (
               <p className="text-sm text-accent-red">{errors.description}</p>
