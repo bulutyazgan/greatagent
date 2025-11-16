@@ -12,13 +12,9 @@ export function RoleSelection({ onSelectRole }: RoleSelectionProps) {
     <div className="h-screen w-full flex flex-col bg-background-primary p-4 overflow-hidden">
       {/* Header */}
       <div className="text-center space-y-3 py-8 shrink-0">
-        <div className="flex justify-center mb-4">
-          <img
-            src="/beaconn-logo.png"
-            alt="Beaconn Logo"
-            className="h-24 md:h-32 lg:h-40 xl:h-48 w-auto object-contain drop-shadow-2xl"
-          />
-        </div>
+        <h1 className="text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tighter bg-gradient-to-br from-neutral-50 via-neutral-100 to-neutral-300 bg-clip-text text-transparent drop-shadow-2xl">
+          Beaconn
+        </h1>
         <p className="text-lg md:text-xl lg:text-2xl xl:text-3xl text-neutral-400 font-medium tracking-tight">
           Connect with help during emergencies
         </p>

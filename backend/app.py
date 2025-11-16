@@ -643,13 +643,19 @@ async def get_metrics(hours: int = Query(1, ge=1, le=24)):
         output_tokens = 0
 
         for r in runs:
-            # Check extra field (where we store usage from API)
-            if r.extra and "usage" in r.extra:
+            # Check metadata first (new approach using add_metadata)
+            if r.metadata and "usage" in r.metadata:
+                usage = r.metadata["usage"]
+                total_tokens += usage.get("total_tokens", 0)
+                input_tokens += usage.get("input_tokens", 0)
+                output_tokens += usage.get("output_tokens", 0)
+            # Check extra field (fallback)
+            elif r.extra and "usage" in r.extra:
                 usage = r.extra["usage"]
                 total_tokens += usage.get("total_tokens", 0)
                 input_tokens += usage.get("input_tokens", 0)
                 output_tokens += usage.get("output_tokens", 0)
-            # Check metadata as fallback
+            # Check legacy metadata format
             elif r.metadata and "token_usage" in r.metadata:
                 total_tokens += r.metadata["token_usage"]
             # Check outputs for token information

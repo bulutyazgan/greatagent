@@ -125,16 +125,24 @@ async def run_input_processing_agent(case_id: int) -> Dict:
         output_tokens = usage.get("output_tokens", 0)
         total_tokens = input_tokens + output_tokens
 
-        # Log token usage to current run
+        # Log token usage to LangSmith using the proper API
         run_tree = get_current_run_tree()
-        if run_tree:
+        if run_tree and hasattr(run_tree, 'add_metadata'):
+            # Add usage metadata
+            run_tree.add_metadata({
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens
+                }
+            })
+            # Also add to extra for backwards compatibility
             run_tree.extra = run_tree.extra or {}
             run_tree.extra["usage"] = {
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": total_tokens
             }
-            run_tree.end(outputs={"tokens": total_tokens})
 
         # Extract JSON from response
         raw_content = result.get("content", [])[0].get("text", "{}")
@@ -307,9 +315,18 @@ async def run_caller_pipeline(case_id: int) -> Dict:
         output_tokens = usage.get("output_tokens", 0)
         total_tokens = input_tokens + output_tokens
 
-        # Log token usage to current run
+        # Log token usage to LangSmith using the proper API
         run_tree = get_current_run_tree()
-        if run_tree:
+        if run_tree and hasattr(run_tree, 'add_metadata'):
+            # Add usage metadata
+            run_tree.add_metadata({
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens
+                }
+            })
+            # Also add to extra for backwards compatibility
             run_tree.extra = run_tree.extra or {}
             run_tree.extra["usage"] = {
                 "input_tokens": input_tokens,
@@ -451,9 +468,18 @@ async def run_helper_pipeline(assignment_id: int) -> Dict:
         output_tokens = usage.get("output_tokens", 0)
         total_tokens = input_tokens + output_tokens
 
-        # Log token usage to current run
+        # Log token usage to LangSmith using the proper API
         run_tree = get_current_run_tree()
-        if run_tree:
+        if run_tree and hasattr(run_tree, 'add_metadata'):
+            # Add usage metadata
+            run_tree.add_metadata({
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens
+                }
+            })
+            # Also add to extra for backwards compatibility
             run_tree.extra = run_tree.extra or {}
             run_tree.extra["usage"] = {
                 "input_tokens": input_tokens,
