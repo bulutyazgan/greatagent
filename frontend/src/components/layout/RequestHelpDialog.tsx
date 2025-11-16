@@ -35,7 +35,7 @@ import { toast } from 'sonner';
 interface RequestHelpDialogProps {
   open: boolean;
   onClose: () => void;
-  onSubmitSuccess?: () => void;
+  onSubmitSuccess?: (caseId: number) => void;
   userLocation: Location | null;
   disaster: DisasterInfo;
 }
@@ -208,9 +208,9 @@ export function RequestHelpDialog({
         description: 'AI is analyzing your situation and generating safety guidance...',
       });
 
-      // Trigger refresh callback
+      // Trigger refresh callback with case_id
       if (onSubmitSuccess) {
-        onSubmitSuccess();
+        onSubmitSuccess(response.case_id);
       }
 
     } catch (error) {

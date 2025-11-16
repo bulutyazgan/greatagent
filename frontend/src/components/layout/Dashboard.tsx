@@ -6,6 +6,7 @@ import { MapContainer } from '@/components/map/MapContainer';
 import { LeftPanel } from '@/components/panels/LeftPanel';
 import { RequestHelpFAB } from './RequestHelpFAB';
 import { RequestHelpDialog } from './RequestHelpDialog';
+import { CallerGuideDialog } from './CallerGuideDialog';
 import { getNearbyCases, type Case } from '@/services/api';
 
 interface DashboardProps {
@@ -53,6 +54,8 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
 
   // State for dialog visibility
   const [showRequestHelpDialog, setShowRequestHelpDialog] = useState(false);
+  const [showCallerGuideDialog, setShowCallerGuideDialog] = useState(false);
+  const [currentCaseId, setCurrentCaseId] = useState<number | null>(null);
 
   // State for help requests from API
   const [helpRequests, setHelpRequests] = useState<HelpRequest[]>([]);
@@ -100,7 +103,11 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
     setShowRequestHelpDialog(true);
   };
 
-  const handleRequestSubmitted = () => {
+  const handleRequestSubmitted = (caseId: number) => {
+    // Show the caller guide dialog
+    setCurrentCaseId(caseId);
+    setShowCallerGuideDialog(true);
+
     // Immediately refresh cases after submission
     if (!location) return;
 
@@ -171,6 +178,17 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
           onSubmitSuccess={handleRequestSubmitted}
           userLocation={location}
           disaster={disaster}
+        />
+      )}
+
+      {/* Caller Guide Dialog */}
+      {showCallerGuideDialog && currentCaseId && (
+        <CallerGuideDialog
+          caseId={currentCaseId}
+          onClose={() => {
+            setShowCallerGuideDialog(false);
+            setCurrentCaseId(null);
+          }}
         />
       )}
     </div>
