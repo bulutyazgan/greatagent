@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { UserRole, DisasterInfo } from '@/types';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useGeolocation } from '@/hooks/useGeolocation';
@@ -10,10 +10,18 @@ import { VoiceConversationScreen } from '@/components/voice/VoiceConversationScr
 import { Dashboard } from '@/components/layout/Dashboard';
 import { RequestHelpDialog } from '@/components/layout/RequestHelpDialog';
 import { CallerGuideDialog } from '@/components/layout/CallerGuideDialog';
+import { AgentDashboard } from '@/components/dashboard/AgentDashboard';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
 function App() {
+  // Check if dashboard mode is requested via URL
+  const [isDashboardMode, setIsDashboardMode] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setIsDashboardMode(params.get('dashboard') === 'true');
+  }, []);
   const { role, selectRole, clearRole, hasRole } = useUserRole();
   const { location } = useGeolocation();
   const { selectedDisaster, nearbyDisasters } = useDisasterSelection(location, role);
@@ -123,6 +131,11 @@ function App() {
     clearRole();
     clearIdentity();
   };
+
+  // If dashboard mode, render AgentDashboard
+  if (isDashboardMode) {
+    return <AgentDashboard />;
+  }
 
   // Create a temporary disaster for the initial dialog
   const tempDisaster: DisasterInfo = {

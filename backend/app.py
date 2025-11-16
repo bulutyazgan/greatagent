@@ -664,6 +664,299 @@ async def get_metrics(hours: int = Query(1, ge=1, le=24)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/tool-usage")
+async def get_tool_usage(hours: int = Query(24, ge=1, le=168)):
+    """
+    Get tool usage statistics from LangSmith runs.
+
+    Args:
+        hours: Number of hours to look back (default 24, max 168/1 week)
+
+    Returns:
+        Dictionary of tool names to usage counts
+    """
+    try:
+        # Get runs from specified time window
+        recent_runs = ls_client.list_runs(
+            project_name=LANGSMITH_PROJECT,
+            start_time=datetime.now() - timedelta(hours=hours),
+            limit=1000,
+        )
+
+        runs = list(recent_runs)
+
+        # Count tool usage across all runs
+        tool_usage = {}
+
+        for run in runs:
+            # Get the run's name which often indicates the tool/function called
+            if run.name:
+                tool_name = run.name
+                tool_usage[tool_name] = tool_usage.get(tool_name, 0) + 1
+
+            # Also check for tool calls in the run's metadata
+            if run.extra and isinstance(run.extra, dict):
+                if 'tools' in run.extra:
+                    tools = run.extra.get('tools', [])
+                    if isinstance(tools, list):
+                        for tool in tools:
+                            tool_usage[tool] = tool_usage.get(tool, 0) + 1
+
+        logger.info(f"Tool usage query: {len(tool_usage)} unique tools tracked")
+
+        return {
+            "time_window_hours": hours,
+            "tool_usage": tool_usage,
+            "total_tools": len(tool_usage),
+            "total_calls": sum(tool_usage.values())
+        }
+    except Exception as e:
+        logger.error(f"Tool usage query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/agent-runs")
+async def get_recent_agent_runs(limit: int = Query(10, ge=1, le=50)):
+    """
+    Get recent agent runs with detailed action information.
+
+    Args:
+        limit: Number of most recent runs to return (default 10, max 50)
+
+    Returns:
+        List of agent runs with actions, inputs, outputs, and timing
+    """
+    try:
+        # Get recent runs
+        recent_runs = ls_client.list_runs(
+            project_name=LANGSMITH_PROJECT,
+            limit=limit,
+        )
+
+        runs_data = []
+
+        for run in recent_runs:
+            # Get child runs (actions/steps within the agent)
+            child_runs = list(ls_client.list_runs(
+                project_name=LANGSMITH_PROJECT,
+                parent_run_id=run.id,
+            ))
+
+            actions = []
+            for child in child_runs:
+                action = {
+                    "id": str(child.id),
+                    "timestamp": child.start_time.isoformat() if child.start_time else None,
+                    "action": child.name or "unknown",
+                    "input": child.inputs or {},
+                    "output": child.outputs or {},
+                    "status": "success" if child.status == "success" else "error" if child.error else "running",
+                    "duration": child.latency if child.latency else None,
+                    "toolName": child.run_type or None,
+                }
+                actions.append(action)
+
+            run_data = {
+                "runId": str(run.id),
+                "timestamp": run.start_time.isoformat() if run.start_time else None,
+                "agentType": run.name or "Agent",
+                "status": "completed" if run.status == "success" else "failed" if run.error else "running",
+                "actions": actions,
+                "totalDuration": run.latency if run.latency else None,
+            }
+            runs_data.append(run_data)
+
+        logger.info(f"Agent runs query: {len(runs_data)} runs returned")
+
+        return {
+            "runs": runs_data,
+            "count": len(runs_data)
+        }
+    except Exception as e:
+        logger.error(f"Agent runs query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/metrics/detailed")
+async def get_detailed_metrics(hours: int = Query(24, ge=1, le=168)):
+    """
+    Get detailed metrics with latency breakdowns for each agent run.
+
+    Returns:
+        - Per-run latency breakdown (DB time, LLM time, total time)
+        - Tool-level statistics (execution count, avg latency)
+        - Database query statistics
+        - LLM call statistics
+    """
+    try:
+        recent_runs = ls_client.list_runs(
+            project_name=LANGSMITH_PROJECT,
+            start_time=datetime.now() - timedelta(hours=hours),
+            limit=1000,
+        )
+
+        runs = list(recent_runs)
+
+        if not runs:
+            return {
+                "time_window_hours": hours,
+                "total_runs": 0,
+                "message": "No runs found"
+            }
+
+        # Aggregate detailed metrics
+        tool_latencies = {}
+        db_queries = []
+        llm_calls = []
+        run_breakdowns = []
+
+        for run in runs:
+            # Get child runs for this run
+            children = list(ls_client.list_runs(
+                project_name=LANGSMITH_PROJECT,
+                parent_run_id=run.id,
+            ))
+
+            db_time = 0
+            llm_time = 0
+            tool_times = {}
+
+            for child in children:
+                latency = child.latency or 0
+
+                # Categorize by run name
+                if child.name == "database_query":
+                    db_time += latency
+                    db_queries.append({
+                        "parent_run": run.name,
+                        "latency_ms": round(latency * 1000, 2),
+                        "timestamp": child.start_time.isoformat() if child.start_time else None
+                    })
+                elif "Agent" in child.name or "LLM" in child.name.upper():
+                    llm_time += latency
+                    llm_calls.append({
+                        "agent": child.name,
+                        "latency_ms": round(latency * 1000, 2),
+                        "timestamp": child.start_time.isoformat() if child.start_time else None
+                    })
+
+                # Track tool-specific latencies
+                tool_name = child.name
+                if tool_name not in tool_latencies:
+                    tool_latencies[tool_name] = {"count": 0, "total_time": 0, "avg_time": 0}
+
+                tool_latencies[tool_name]["count"] += 1
+                tool_latencies[tool_name]["total_time"] += latency
+
+            # Add run breakdown
+            total_latency = run.latency or 0
+            other_time = max(0, total_latency - db_time - llm_time)
+
+            run_breakdowns.append({
+                "run_id": str(run.id),
+                "name": run.name,
+                "total_latency_ms": round(total_latency * 1000, 2),
+                "db_time_ms": round(db_time * 1000, 2),
+                "llm_time_ms": round(llm_time * 1000, 2),
+                "other_time_ms": round(other_time * 1000, 2),
+                "db_percentage": round((db_time / total_latency * 100), 1) if total_latency > 0 else 0,
+                "llm_percentage": round((llm_time / total_latency * 100), 1) if total_latency > 0 else 0,
+                "timestamp": run.start_time.isoformat() if run.start_time else None
+            })
+
+        # Calculate averages for tools
+        for tool_name, stats in tool_latencies.items():
+            stats["avg_time_ms"] = round((stats["total_time"] / stats["count"]) * 1000, 2) if stats["count"] > 0 else 0
+            stats["total_time_ms"] = round(stats["total_time"] * 1000, 2)
+            del stats["total_time"]  # Remove seconds version
+
+        logger.info(f"Detailed metrics: {len(runs)} runs analyzed")
+
+        return {
+            "time_window_hours": hours,
+            "total_runs": len(runs),
+            "run_breakdowns": run_breakdowns[-20:],  # Last 20 runs
+            "tool_statistics": tool_latencies,
+            "database_queries": {
+                "total_count": len(db_queries),
+                "avg_latency_ms": round(sum(q["latency_ms"] for q in db_queries) / len(db_queries), 2) if db_queries else 0,
+                "recent_queries": db_queries[-10:]  # Last 10
+            },
+            "llm_calls": {
+                "total_count": len(llm_calls),
+                "avg_latency_ms": round(sum(c["latency_ms"] for c in llm_calls) / len(llm_calls), 2) if llm_calls else 0,
+                "recent_calls": llm_calls[-10:]  # Last 10
+            }
+        }
+    except Exception as e:
+        logger.error(f"Detailed metrics query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/workflow-graph/{run_id}")
+async def get_workflow_graph(run_id: str):
+    """
+    Get workflow graph data for visualization.
+    Returns nodes and edges representing the agent execution flow.
+    """
+    try:
+        # Get the main run
+        run = ls_client.read_run(run_id)
+
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        # Get all child runs
+        children = list(ls_client.list_runs(
+            project_name=LANGSMITH_PROJECT,
+            parent_run_id=run_id,
+        ))
+
+        # Build nodes
+        nodes = [{
+            "id": str(run.id),
+            "type": "agent",
+            "label": run.name or "Agent",
+            "status": run.status,
+            "latency_ms": round((run.latency or 0) * 1000, 2),
+            "timestamp": run.start_time.isoformat() if run.start_time else None
+        }]
+
+        # Build edges
+        edges = []
+
+        for i, child in enumerate(children):
+            node_type = "database" if child.name == "database_query" else "tool" if "tool" in child.name.lower() else "llm"
+
+            nodes.append({
+                "id": str(child.id),
+                "type": node_type,
+                "label": child.name,
+                "status": child.status,
+                "latency_ms": round((child.latency or 0) * 1000, 2),
+                "timestamp": child.start_time.isoformat() if child.start_time else None,
+                "inputs": child.inputs,
+                "outputs": child.outputs
+            })
+
+            edges.append({
+                "id": f"edge-{i}",
+                "source": str(run.id),
+                "target": str(child.id),
+                "label": f"{round((child.latency or 0) * 1000, 1)}ms"
+            })
+
+        return {
+            "run_id": run_id,
+            "run_name": run.name,
+            "nodes": nodes,
+            "edges": edges
+        }
+    except Exception as e:
+        logger.error(f"Workflow graph query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # HEALTH CHECK
 # ============================================================================

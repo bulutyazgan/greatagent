@@ -14,22 +14,26 @@ export function CallerGuideDialog({ caseId, onClose }: CallerGuideDialogProps) {
   const [pollCount, setPollCount] = useState(0);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout | null = null;
+    let isMounted = true;
 
     const fetchGuide = async () => {
       try {
         const response = await getCallerGuide(caseId);
 
+        if (!isMounted) return;
+
         if (response.status === 'processing') {
           // Still processing, keep polling
           setPollCount(prev => prev + 1);
-        } else {
+        } else if (response.guide_text) {
           // Guide is ready
           setGuide(response);
           setLoading(false);
           if (interval) clearInterval(interval);
         }
       } catch (err) {
+        if (!isMounted) return;
         console.error('Failed to fetch caller guide:', err);
         setError('Failed to load safety guidance');
         setLoading(false);
@@ -42,19 +46,20 @@ export function CallerGuideDialog({ caseId, onClose }: CallerGuideDialogProps) {
 
     // Poll every 2 seconds for up to 30 seconds
     interval = setInterval(() => {
-      if (pollCount < 15) {
-        fetchGuide();
-      } else {
+      if (pollCount >= 15) {
         setError('AI is taking longer than expected. Please refresh to check again.');
         setLoading(false);
-        clearInterval(interval);
+        if (interval) clearInterval(interval);
+      } else {
+        fetchGuide();
       }
     }, 2000);
 
     return () => {
+      isMounted = false;
       if (interval) clearInterval(interval);
     };
-  }, [caseId, pollCount]);
+  }, [caseId]); // Removed pollCount from dependencies to prevent infinite loop
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">

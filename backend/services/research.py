@@ -20,15 +20,18 @@ from typing import Dict, Optional, List
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from database.db import get_db_cursor
-from main import get_api_session, API_ENDPOINT, MODELS, TEAM_ID, API_TOKEN
+from main import get_api_session, API_ENDPOINT, MODELS, TEAM_ID, API_TOKEN, LANGSMITH_PROJECT
 from agent_tools import async_valyu_deepsearch
 from services.cases import async_get_nearby_cases
+from langsmith import traceable
+from langsmith.run_helpers import get_current_run_tree
 
 
 # Initialize API client
 api_client = get_api_session()
 
 
+@traceable(name="InputProcessingAgent", project_name=LANGSMITH_PROJECT)
 async def run_input_processing_agent(case_id: int) -> Dict:
     """
     Run InputProcessingAgent to parse raw help request.
@@ -183,6 +186,7 @@ async def run_input_processing_agent(case_id: int) -> Dict:
     return extracted_data
 
 
+@traceable(name="CallerGuideAgent", project_name=LANGSMITH_PROJECT)
 async def run_caller_pipeline(case_id: int) -> Dict:
     """
     Run ResearchAgent + CallerGuideAgent pipeline.
@@ -293,6 +297,7 @@ async def run_caller_pipeline(case_id: int) -> Dict:
         return guide
 
 
+@traceable(name="HelperGuideAgent", project_name=LANGSMITH_PROJECT)
 async def run_helper_pipeline(assignment_id: int) -> Dict:
     """
     Run ResearchAgent + HelperGuideAgent pipeline.
