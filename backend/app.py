@@ -11,17 +11,50 @@ Endpoints:
 - Routing: GET /api/cases/{case_id}/route
 """
 
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+import requests
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List
-import sys
-import os
 
 # Add current directory to path for service imports
 sys.path.insert(0, os.path.dirname(__file__))
 
 from services import users, cases, helpers, guides
+
+
+class AppSettings(BaseSettings):
+    """Central configuration loaded from .env / environment."""
+
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parent / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    team_id: str
+    api_token: str
+    bedrock_endpoint: str = "https://ctwa92wg1b.execute-api.us-east-1.amazonaws.com/prod/invoke"
+
+
+settings = AppSettings()
+
+TEAM_ID = settings.team_id
+API_TOKEN = settings.api_token
+API_ENDPOINT = settings.bedrock_endpoint
+
+MODELS = {
+    "recommended": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "fast": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+    "powerful": "us.anthropic.claude-3-opus-20240229-v1:0",
+    "llama_large": "us.meta.llama3-2-90b-instruct-v1:0",
+    "mistral_large": "us.mistral.pixtral-large-2502-v1:0"
+}
 
 # Create FastAPI app
 app = FastAPI(
@@ -72,6 +105,54 @@ class CreateAssignmentRequest(BaseModel):
 class CompleteAssignmentRequest(BaseModel):
     outcome: str = Field(..., description="Outcome description")
     notes: Optional[str] = Field(None, description="Completion notes")
+
+
+class ChatMessage(BaseModel):
+    """Message schema for forwarding to the Bedrock relay."""
+
+    role: Literal["system", "user", "assistant", "tool"] = "user"
+    content: str
+
+
+class InvokeRequest(BaseModel):
+    """Payload accepted by the LLM relay endpoint."""
+
+    model: str = Field(
+        default="recommended",
+        description="Either a key from MODELS or a fully-qualified model identifier."
+    )
+    messages: List[ChatMessage] = Field(..., description="Conversation history in Claude format")
+    max_tokens: int = Field(default=256, ge=1, le=4096)
+    temperature: float = Field(default=0.7, ge=0.0, le=1.0)
+    extra_parameters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional raw parameters merged into the Bedrock payload."
+    )
+
+
+# ============================================================================
+# EXTERNAL API RELAY HELPERS
+# ============================================================================
+
+def get_api_session() -> requests.Session:
+    """Create a Bedrock session with authentication headers."""
+
+    if not TEAM_ID or not API_TOKEN:
+        raise ValueError("TEAM_ID or API_TOKEN not found. Please check your .env file.")
+
+    session = requests.Session()
+    session.headers.update({
+        "Content-Type": "application/json",
+        "X-Team-ID": TEAM_ID,
+        "X-API-Token": API_TOKEN
+    })
+    return session
+
+
+def _resolve_model_name(model_choice: str) -> str:
+    """Map shorthand keys to fully qualified model identifiers."""
+
+    return MODELS.get(model_choice, model_choice)
 
 
 # ============================================================================
@@ -392,6 +473,48 @@ def get_route_to_case(
 
 
 # ============================================================================
+# LLM RELAY ENDPOINT
+# ============================================================================
+
+@app.post("/api/llm/invoke")
+def invoke_bedrock(request: InvokeRequest) -> Dict[str, Any]:
+    """Forward payload to the hackathon Bedrock endpoint."""
+
+    payload: Dict[str, Any] = {
+        "team_id": TEAM_ID,
+        "api_token": API_TOKEN,
+        "model": _resolve_model_name(request.model),
+        "messages": [message.model_dump() for message in request.messages],
+        "max_tokens": request.max_tokens,
+        "temperature": request.temperature,
+    }
+
+    if request.extra_parameters:
+        payload.update(request.extra_parameters)
+
+    try:
+        session = get_api_session()
+    except ValueError as config_err:
+        raise HTTPException(status_code=500, detail=str(config_err)) from config_err
+
+    try:
+        response = session.post(API_ENDPOINT, json=payload, timeout=60)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as http_err:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail={
+                "message": "Upstream Bedrock API returned an error",
+                "response_text": response.text,
+            }
+        ) from http_err
+    except requests.exceptions.RequestException as req_err:
+        raise HTTPException(status_code=502, detail=str(req_err)) from req_err
+
+    return response.json()
+
+
+# ============================================================================
 # HEALTH CHECK
 # ============================================================================
 
@@ -418,4 +541,4 @@ def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

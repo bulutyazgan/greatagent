@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { HelpRequestType, Urgency, Location, DisasterInfo } from '@/types';
+import type { HelpRequestType, Urgency, Location } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,6 @@ interface RequestHelpDialogProps {
   onClose: () => void;
   onSubmitSuccess?: () => void;
   userLocation: Location | null;
-  disaster: DisasterInfo;
 }
 
 interface FormData {
@@ -120,7 +119,6 @@ export function RequestHelpDialog({
   onClose,
   onSubmitSuccess,
   userLocation,
-  disaster
 }: RequestHelpDialogProps) {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<FormData>({

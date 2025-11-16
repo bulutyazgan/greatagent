@@ -11,11 +11,12 @@ import { Loader2 } from 'lucide-react';
 
 function App() {
   const { role, selectRole, clearRole, hasRole } = useUserRole();
-  const { location } = useGeolocation();
-  const { selectedDisaster, nearbyDisasters } = useDisasterSelection(location, role);
-  const { registerUser, clearIdentity, isLoading: isRegisteringUser } = useUserIdentity();
+  const { location, error: locationError, loading: isLocating, requestLocation } = useGeolocation();
+  const { selectedDisaster } = useDisasterSelection(location, role);
+  const { registerUser, clearIdentity } = useUserIdentity();
 
   const [isRegistering, setIsRegistering] = useState(false);
+  const [requestHelpPromptVersion, setRequestHelpPromptVersion] = useState(0);
 
   const handleRoleSelect = async (selectedRole: UserRole) => {
     // Need location to register
@@ -38,6 +39,10 @@ function App() {
       toast.success('Registration successful', {
         description: `You're registered as ${selectedRole === 'victim' ? 'someone needing help' : 'a helper'}`,
       });
+
+      if (selectedRole === 'victim') {
+        setRequestHelpPromptVersion((version) => version + 1);
+      }
 
     } catch (error) {
       console.error('Failed to register user:', error);
@@ -76,6 +81,37 @@ function App() {
     return (
       <>
         <RoleSelection onSelectRole={handleRoleSelect} />
+
+        {(!location) && (
+          <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-4">
+            <div className="glass max-w-md w-full p-6 rounded-lg space-y-4 text-center">
+              <h2 className="text-2xl font-semibold text-white">Share your location</h2>
+              <p className="text-gray-300">
+                We need your location to match helpers and people needing assistance nearby.
+                Please allow location access to continue.
+              </p>
+
+              {locationError && (
+                <p className="text-sm text-red-400">{locationError}</p>
+              )}
+
+              {isLocating ? (
+                <div className="flex items-center justify-center gap-3 text-white">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Requesting permission…</span>
+                </div>
+              ) : (
+                <button
+                  className="w-full py-2 rounded bg-accent-blue text-white font-medium hover:bg-accent-blue/80 transition-colors"
+                  onClick={requestLocation}
+                >
+                  Allow Location Access
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {isRegistering && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="glass p-8 rounded-lg flex items-center gap-4">
@@ -107,6 +143,9 @@ function App() {
       role={role!}
       disaster={effectiveDisaster}
       onChangeRole={handleClearRole}
+      userLocation={location}
+      isLocationLoading={isLocating}
+      requestHelpPromptVersion={requestHelpPromptVersion}
     />
   );
 }

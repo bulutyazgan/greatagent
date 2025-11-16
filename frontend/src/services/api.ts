@@ -203,8 +203,7 @@ export async function getCase(caseId: number): Promise<Case> {
 export async function getNearbyCases(
   latitude: number,
   longitude: number,
-  radiusKm: number = 10,
-  statusFilter: string[] = ['open']
+  radiusKm: number = 10
 ): Promise<Case[]> {
   const params = new URLSearchParams({
     lat: latitude.toString(),

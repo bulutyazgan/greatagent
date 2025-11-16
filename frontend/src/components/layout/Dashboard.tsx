@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import type { UserRole, DisasterInfo, Location, HelpRequest } from '@/types';
-import { useGeolocation } from '@/hooks/useGeolocation';
 import { Header } from './Header';
 import { MapContainer } from '@/components/map/MapContainer';
 import { LeftPanel } from '@/components/panels/LeftPanel';
@@ -12,29 +11,39 @@ interface DashboardProps {
   role: UserRole;
   disaster: DisasterInfo;
   onChangeRole: () => void;
+  userLocation: Location | null;
+  isLocationLoading: boolean;
+  requestHelpPromptVersion: number;
 }
 
 // Helper function to map backend Case to frontend HelpRequest
-function mapCaseToHelpRequest(apiCase: Case): HelpRequest {
+function mapCaseToHelpRequest(apiCase: Case, disasterId: string): HelpRequest {
   return {
     id: apiCase.case_id.toString(),
+    disasterId,
+    userId: apiCase.caller_user_id ? apiCase.caller_user_id.toString() : 'anonymous',
+    userName: apiCase.description ? apiCase.description.slice(0, 24) : 'Anonymous caller',
     type: 'medical', // Default type, could be inferred from description
     location: {
       lat: apiCase.location.latitude,
       lng: apiCase.location.longitude,
     },
-    peopleCount: apiCase.people_count || undefined,
+    peopleCount: apiCase.people_count ?? 0,
     urgency: apiCase.urgency,
     status: apiCase.status as any,
     description: apiCase.description || apiCase.raw_problem_description,
-    vulnerabilityFactors: apiCase.vulnerability_factors || [],
-    mobilityStatus: apiCase.mobility_status || undefined,
-    timestamp: apiCase.created_at,
+    createdAt: new Date(apiCase.created_at),
   };
 }
 
-export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
-  const { location, loading } = useGeolocation();
+export function Dashboard({
+  role,
+  disaster,
+  onChangeRole,
+  userLocation,
+  isLocationLoading,
+  requestHelpPromptVersion,
+}: DashboardProps) {
 
   // State to manage map center - can be controlled by user location or help request selection
   const [mapCenter, setMapCenter] = useState<Location>(disaster.center);
@@ -44,36 +53,34 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
 
   // State for help requests from API
   const [helpRequests, setHelpRequests] = useState<HelpRequest[]>([]);
-  const [loadingCases, setLoadingCases] = useState(false);
 
-  // Update map center when user location changes (but only initially)
+  // Victims should center map on their own location (helpers view bounded cases instead)
   useEffect(() => {
-    if (location) {
-      setMapCenter(location);
+    if (role === 'victim' && userLocation) {
+      setMapCenter(userLocation);
     }
-  }, [location]);
+  }, [userLocation, role]);
 
   // Fetch nearby cases from API (for both victims and responders)
   useEffect(() => {
-    if (!location) return;
+    if (!userLocation) return;
 
     const fetchCases = async () => {
-      setLoadingCases(true);
       try {
+        const radiusKm = role === 'responder' ? 100 : 10;
         const cases = await getNearbyCases(
-          location.lat,
-          location.lng,
-          10, // 10km radius
-          ['open', 'assigned']
+          userLocation.lat,
+          userLocation.lng,
+          radiusKm
         );
 
-        const mapped = cases.map(mapCaseToHelpRequest);
+        const mapped = cases.map((item) => mapCaseToHelpRequest(item, disaster.id));
         setHelpRequests(mapped);
 
       } catch (error) {
         console.error('Failed to fetch nearby cases:', error);
       } finally {
-        setLoadingCases(false);
+        // intentionally left blank
       }
     };
 
@@ -82,7 +89,13 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
     // Poll every 10 seconds for updates
     const interval = setInterval(fetchCases, 10000);
     return () => clearInterval(interval);
-  }, [location]);
+  }, [userLocation, role]);
+
+  useEffect(() => {
+    if (requestHelpPromptVersion > 0) {
+      setShowRequestHelpDialog(true);
+    }
+  }, [requestHelpPromptVersion]);
 
   const handleRequestHelp = () => {
     setShowRequestHelpDialog(true);
@@ -90,15 +103,15 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
 
   const handleRequestSubmitted = () => {
     // Immediately refresh cases after submission
-    if (!location) return;
+    if (!userLocation) return;
 
+    const radiusKm = role === 'responder' ? 100 : 10;
     getNearbyCases(
-      location.lat,
-      location.lng,
-      10,
-      ['open', 'assigned']
+      userLocation.lat,
+      userLocation.lng,
+      radiusKm
     ).then(cases => {
-      const mapped = cases.map(mapCaseToHelpRequest);
+      const mapped = cases.map((item) => mapCaseToHelpRequest(item, disaster.id));
       setHelpRequests(mapped);
     }).catch(error => {
       console.error('Failed to refresh cases:', error);
@@ -115,7 +128,7 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
     setMapCenter(requestLocation);
   };
 
-  if (loading && !location) {
+  if (isLocationLoading && !userLocation) {
     return (
       <div className="min-h-screen w-full bg-background-primary flex items-center justify-center">
         <div className="glass p-6 rounded-lg">
@@ -143,8 +156,9 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
           center={mapCenter}
           zoom={role === 'victim' ? 16 : 13}
           helpRequests={helpRequests}
-          userLocation={location}
+          userLocation={userLocation}
           onMarkerClick={handleMarkerClick}
+          fitToRequests={role === 'responder'}
         />
       </div>
 
@@ -157,8 +171,7 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
           open={showRequestHelpDialog}
           onClose={() => setShowRequestHelpDialog(false)}
           onSubmitSuccess={handleRequestSubmitted}
-          userLocation={location}
-          disaster={disaster}
+          userLocation={userLocation}
         />
       )}
     </div>

@@ -16,12 +16,9 @@ from . import users
 from . import cases
 from . import helpers
 from . import guides
-from . import research
-
 __all__ = [
     'users',
     'cases',
     'helpers',
     'guides',
-    'research'
 ]
