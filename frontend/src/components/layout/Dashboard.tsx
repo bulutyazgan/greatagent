@@ -4,6 +4,7 @@ import { useGeolocation } from '@/hooks/useGeolocation';
 import { Header } from './Header';
 import { MapContainer } from '@/components/map/MapContainer';
 import { LeftPanel } from '@/components/panels/LeftPanel';
+import { MyCasePanel } from '@/components/panels/MyCasePanel';
 import { RequestHelpFAB } from './RequestHelpFAB';
 import { RequestHelpDialog } from './RequestHelpDialog';
 import { CallerGuideDialog } from './CallerGuideDialog';
@@ -57,6 +58,12 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
   const [showCallerGuideDialog, setShowCallerGuideDialog] = useState(false);
   const [currentCaseId, setCurrentCaseId] = useState<number | null>(null);
 
+  // State for victim's own case (from localStorage)
+  const [myCaseId, setMyCaseId] = useState<number | null>(() => {
+    const stored = localStorage.getItem('last_case_id');
+    return stored ? parseInt(stored) : null;
+  });
+
   // State for help requests from API
   const [helpRequests, setHelpRequests] = useState<HelpRequest[]>([]);
   const [loadingCases, setLoadingCases] = useState(false);
@@ -104,6 +111,9 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
   };
 
   const handleRequestSubmitted = (caseId: number) => {
+    // Store the case ID for the victim
+    setMyCaseId(caseId);
+
     // Show the caller guide dialog
     setCurrentCaseId(caseId);
     setShowCallerGuideDialog(true);
@@ -153,8 +163,12 @@ export function Dashboard({ role, disaster, onChangeRole }: DashboardProps) {
         onChangeRole={onChangeRole}
       />
 
-      {/* Left Panel with Tabs */}
-      <LeftPanel role={role} onHelpRequestClick={handleHelpRequestClick} />
+      {/* Left Panel - Show MyCasePanel for victims with active case, otherwise show LeftPanel */}
+      {role === 'victim' && myCaseId ? (
+        <MyCasePanel caseId={myCaseId} />
+      ) : (
+        <LeftPanel role={role} onHelpRequestClick={handleHelpRequestClick} />
+      )}
 
       {/* Map Container */}
       <div className="pt-16 h-screen">
